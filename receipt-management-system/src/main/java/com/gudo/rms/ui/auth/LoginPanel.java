@@ -37,7 +37,7 @@ import java.awt.geom.RoundRectangle2D;
 import java.awt.Shape;
 import java.util.function.Consumer;
 
-/** Sign-in screen for the Receipt Management System. */
+/** Sign-in screen for BRED, the Business Receipt Encoding and Documentation System. */
 public final class LoginPanel extends JLayeredPane {
     /** Performs the sign-in operation and returns a message, or null on success. */
     @FunctionalInterface
@@ -99,43 +99,86 @@ public final class LoginPanel extends JLayeredPane {
         RoundedSidePanel panel = new RoundedSidePanel(true);
         brandPanel = panel;
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(BorderFactory.createEmptyBorder(44, 42, 44, 42));
+        panel.setBorder(BorderFactory.createEmptyBorder(38, 38, 34, 34));
         panel.setFill(RmsColors.PRIMARY);
 
-        JLabel mark = new JLabel("RMS", SwingConstants.CENTER);
+        JLabel mark = new JLabel("BRED");
         mark.setForeground(Color.WHITE);
-        mark.setFont(new Font("SansSerif", Font.BOLD, 34));
-        mark.setAlignmentX(CENTER_ALIGNMENT);
+        mark.setFont(new Font("SansSerif", Font.BOLD, 28));
+        mark.setAlignmentX(LEFT_ALIGNMENT);
         panel.add(mark);
-        panel.add(Box.createVerticalStrut(18));
 
-        JLabel title = new JLabel("Receipt Management", SwingConstants.CENTER);
-        title.setForeground(Color.WHITE);
-        title.setFont(new Font("SansSerif", Font.BOLD, 22));
-        title.setAlignmentX(CENTER_ALIGNMENT);
+        JLabel title = new JLabel(
+                "<html><div style='width:290px'>Business Receipt Encoding and Documentation System</div></html>");
+        title.setForeground(new Color(224, 236, 255));
+        title.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        title.setName("brandMuted");
+        title.setAlignmentX(LEFT_ALIGNMENT);
         panel.add(title);
 
-        JLabel subtitle = new JLabel("Organize. Track. Report.", SwingConstants.CENTER);
-        subtitle.setForeground(new Color(235, 242, 255));
-        subtitle.setFont(new Font("SansSerif", Font.PLAIN, 14));
-        subtitle.setName("brandTagline");
-        subtitle.setAlignmentX(CENTER_ALIGNMENT);
-        panel.add(subtitle);
+        panel.add(Box.createVerticalStrut(28));
 
-        panel.add(Box.createVerticalStrut(42));
-        for (String feature : new String[] {
-                "Receipt records and attachments",
-                "Supplier and project tracking",
-                "VAT, totals and financial reports",
-                "Role-based access and activity log"}) {
-            JLabel item = new JLabel(feature);
-            item.setForeground(Color.WHITE);
-            item.setFont(new Font("SansSerif", Font.PLAIN, 13));
-            item.setAlignmentX(CENTER_ALIGNMENT);
-            panel.add(item);
-            panel.add(Box.createVerticalStrut(12));
-        }
+        JLabel eyebrow = new JLabel("ORGANIZE. TRACK. REPORT.");
+        eyebrow.setForeground(new Color(206, 224, 255));
+        eyebrow.setFont(new Font("SansSerif", Font.BOLD, 10));
+        eyebrow.setName("brandMuted");
+        eyebrow.setAlignmentX(LEFT_ALIGNMENT);
+        panel.add(eyebrow);
+        panel.add(Box.createVerticalStrut(10));
+
+        JLabel headline = new JLabel(
+                "<html><div style='width:290px'>Receipts,<br>made clear.</div></html>");
+        headline.setForeground(Color.WHITE);
+        headline.setFont(new Font("SansSerif", Font.BOLD, 32));
+        headline.setAlignmentX(LEFT_ALIGNMENT);
+        panel.add(headline);
+        panel.add(Box.createVerticalStrut(12));
+
+        JLabel description = new JLabel(
+                "<html><div style='width:290px'>Capture purchases, track suppliers, and follow project spending in one place.</div></html>");
+        description.setForeground(new Color(224, 236, 255));
+        description.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        description.setName("brandMuted");
+        description.setAlignmentX(LEFT_ALIGNMENT);
+        panel.add(description);
+
+        panel.add(Box.createVerticalStrut(28));
+        panel.add(brandFeatureRow("01", "Capture", "Keep receipts and attachments together"));
+        panel.add(Box.createVerticalStrut(14));
+        panel.add(brandFeatureRow("02", "Organize", "Track suppliers and project spending"));
+        panel.add(Box.createVerticalStrut(14));
+        panel.add(brandFeatureRow("03", "Review", "See totals, VAT, and financial reports"));
         return panel;
+    }
+
+    private JPanel brandFeatureRow(String number, String title, String detail) {
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+
+        JLabel index = new JLabel(number, SwingConstants.LEFT);
+        index.setForeground(new Color(206, 224, 255));
+        index.setFont(new Font("SansSerif", Font.BOLD, 11));
+        index.setName("brandMuted");
+        index.setPreferredSize(new Dimension(26, 34));
+        row.add(index, BorderLayout.WEST);
+
+        JPanel copy = new JPanel();
+        copy.setOpaque(false);
+        copy.setLayout(new BoxLayout(copy, BoxLayout.Y_AXIS));
+        JLabel heading = new JLabel(title);
+        heading.setForeground(Color.WHITE);
+        heading.setFont(new Font("SansSerif", Font.BOLD, 13));
+        JLabel caption = new JLabel(detail);
+        caption.setForeground(new Color(224, 236, 255));
+        caption.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        caption.setName("brandMuted");
+        copy.add(heading);
+        copy.add(Box.createVerticalStrut(3));
+        copy.add(caption);
+        row.add(copy, BorderLayout.CENTER);
+        return row;
     }
 
     private JPanel buildFormPanel() {

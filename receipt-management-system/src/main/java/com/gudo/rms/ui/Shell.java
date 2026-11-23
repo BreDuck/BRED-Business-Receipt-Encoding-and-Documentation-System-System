@@ -158,11 +158,12 @@ public final class Shell extends JPanel {
         side.setLayout(new BoxLayout(side, BoxLayout.Y_AXIS));
         side.setBorder(BorderFactory.createEmptyBorder(24, 18, 18, 18));
         side.setPreferredSize(new Dimension(252, 0));
-        JLabel brand = new JLabel("RMS");
+        JLabel brand = new JLabel("BRED");
         brand.setFont(brand.getFont().deriveFont(Font.BOLD, 24f));
         brand.setForeground(RmsColors.PRIMARY);
-        JLabel sub = new JLabel("Receipt Management");
+        JLabel sub = new JLabel("<html>Business Receipt<br>Encoding and<br>Documentation System</html>");
         sub.setForeground(RmsColors.SECONDARY_TEXT);
+        sub.setFont(sub.getFont().deriveFont(Font.PLAIN, 11f));
         brand.setAlignmentX(LEFT_ALIGNMENT);
         sub.setAlignmentX(LEFT_ALIGNMENT);
         side.add(brand);

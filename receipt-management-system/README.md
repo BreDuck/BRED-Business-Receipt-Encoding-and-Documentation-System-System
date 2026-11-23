@@ -1,4 +1,4 @@
-# Receipt Management System (RMS)
+# BRED — Business Receipt Encoding and Documentation System
 
 A desktop app for a small office to encode business receipts, keep them in one searchable directory, and open any
 receipt in a layout that looks like the paper original.
@@ -24,7 +24,7 @@ There is no public sign-up. An admin creates every account.
 
 ## Getting started
 1. Install Java 21 or newer and Maven.
-2. Run the app: `mvn -q exec:java` (or `mvn -q package`, then `java -jar target/rms-0.1.0-SNAPSHOT.jar`). In VS Code, run `Main.java`.
+2. Run the app: `mvn -q exec:java` (or `mvn -q package`, then `java -jar target/bred-0.1.0-SNAPSHOT.jar`). In VS Code, run `Main.java`.
 3. Sign in with **admin@rms.local** and password **admin123**, then change the password under **Settings**.
 4. Add a supplier, then a receipt. Create more accounts (Admin or Encoder) under **Users**.
 

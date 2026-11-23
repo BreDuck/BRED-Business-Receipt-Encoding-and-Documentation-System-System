@@ -49,7 +49,7 @@ This lets admins add accounts from inside the app. It keeps the powerful service
 ```
 mvn -q exec:java                  # run from source
 mvn -q package                    # or build a single jar…
-java -jar target/rms-0.1.0-SNAPSHOT.jar
+java -jar target/bred-0.1.0-SNAPSHOT.jar
 ```
 Copy the jar and the same `application.properties` (project URL and public anon/publishable key) to the other computers.
 Create a separate Supabase Auth account for each employee. After sign-in, the app header should show **Shared cloud**;

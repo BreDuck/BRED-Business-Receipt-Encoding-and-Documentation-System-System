@@ -9,7 +9,7 @@ import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import java.nio.file.Path;
 
-/** Launches the Receipt Management System. */
+/** Launches the Business Receipt Encoding and Documentation System (BRED). */
 public final class Main {
     /** Prevents instantiation of the application launcher. */
     private Main() { }
@@ -34,7 +34,8 @@ public final class Main {
                 problem = e.getMessage();
             }
             if (ctx == null && problem != null && !problem.contains("Supabase")) {
-                JOptionPane.showMessageDialog(null, problem, "Receipt Management System", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(null, problem,
+                        "BRED - Business Receipt Encoding and Documentation System", JOptionPane.ERROR_MESSAGE);
                 System.exit(1);
             }
             new MainWindow(ctx, problem).setVisible(true);

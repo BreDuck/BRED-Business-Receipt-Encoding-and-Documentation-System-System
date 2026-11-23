@@ -22,7 +22,7 @@ public final class MainWindow extends JFrame {
     /** @param ctx the application, or null when Supabase is not configured
      *  @param setupProblem detail to show on the setup screen when ctx is null */
     public MainWindow(AppContext ctx, String setupProblem) {
-        super("Receipt Management System");
+        super("BRED - Business Receipt Encoding and Documentation System");
         this.ctx = ctx;
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setMinimumSize(new Dimension(960, 620));
