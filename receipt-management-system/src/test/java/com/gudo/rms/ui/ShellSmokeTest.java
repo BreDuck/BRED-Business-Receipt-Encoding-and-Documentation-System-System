@@ -5,6 +5,8 @@ import com.gudo.rms.models.Role;
 import com.gudo.rms.security.Module;
 import com.gudo.rms.ui.auth.LoginPanel;
 import com.gudo.rms.ui.auth.SetupPanel;
+import com.gudo.rms.ui.theme.ThemeManager;
+import javax.swing.JComboBox;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -36,5 +38,19 @@ class ShellSmokeTest {
     void shellForAdminOffersEverything() {
         Shell shell = new Shell(TestContexts.withUser(Role.ADMIN), () -> { });
         assertEquals(java.util.List.of(Module.values()), shell.visibleModules());
+    }
+
+    @Test
+    void settingsOffersTheSignatureAppearance() {
+        SettingsPanel settings = new SettingsPanel(TestContexts.withUser(Role.ENCODER));
+        JComboBox<?> appearances = java.util.Arrays.stream(settings.getComponents())
+                .filter(JComboBox.class::isInstance)
+                .map(JComboBox.class::cast)
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(ThemeManager.Appearance.values().length, appearances.getItemCount());
+        assertEquals(ThemeManager.Appearance.BREDUCK_SIGNATURE, appearances.getItemAt(1));
+        assertEquals(appearances.getPreferredSize(), appearances.getMaximumSize());
     }
 }

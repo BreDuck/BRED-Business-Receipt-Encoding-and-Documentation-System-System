@@ -10,13 +10,15 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.util.Arrays;
 
-/** Account details, theme switch and "change my password". */
+/** Account details, appearance options and "change my password". */
 public final class SettingsPanel extends JPanel {
     private final JPasswordField newPassword = new JPasswordField(20);
     private final JPasswordField confirm = new JPasswordField(20);
@@ -39,6 +41,17 @@ public final class SettingsPanel extends JPanel {
         });
         theme.setAlignmentX(LEFT_ALIGNMENT);
         add(theme);
+        add(Box.createVerticalStrut(8));
+        add(heading("Other Appearances"));
+        JComboBox<ThemeManager.Appearance> appearances =
+                new JComboBox<>(ThemeManager.Appearance.values());
+        appearances.setSelectedItem(ThemeManager.appearance());
+        appearances.setAlignmentX(LEFT_ALIGNMENT);
+        Dimension appearanceSize = appearances.getPreferredSize();
+        appearances.setMaximumSize(appearanceSize);
+        appearances.addActionListener(e ->
+                ThemeManager.setAppearance((ThemeManager.Appearance) appearances.getSelectedItem()));
+        add(appearances);
         add(Box.createVerticalStrut(20));
         add(heading("Change my password"));
         add(labelled("New password (min. 6)", newPassword));

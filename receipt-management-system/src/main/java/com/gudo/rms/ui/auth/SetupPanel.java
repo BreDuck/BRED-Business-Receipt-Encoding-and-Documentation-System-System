@@ -22,7 +22,7 @@ public final class SetupPanel extends JPanel {
         card.setBorder(BorderFactory.createEmptyBorder(28, 32, 28, 32));
         JLabel title = new JLabel("Connect to Supabase");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 20f));
-        title.setForeground(RmsColors.PRIMARY);
+        title.setForeground(RmsColors.primary());
         JTextArea text = new JTextArea(
                 "This app keeps all receipts in your Supabase project, so it needs two settings:\n\n"
                 + "  1. RMS_SUPABASE_URL      (your project URL)\n"

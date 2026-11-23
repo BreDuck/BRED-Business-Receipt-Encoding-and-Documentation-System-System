@@ -70,7 +70,7 @@ public final class LoginPanel extends JLayeredPane {
         setLayout(null);
         setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
 
-        background = new Background3D(ThemeManager.isDark(), RmsColors.PRIMARY);
+        background = new Background3D(ThemeManager.isDark(), RmsColors.primaryAccent());
         background.setOpaque(false);
         add(background, Integer.valueOf(0));
 
@@ -100,7 +100,7 @@ public final class LoginPanel extends JLayeredPane {
         brandPanel = panel;
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(BorderFactory.createEmptyBorder(38, 38, 34, 34));
-        panel.setFill(RmsColors.PRIMARY);
+        panel.setFill(RmsColors.primary());
 
         JLabel mark = new JLabel("BRED");
         mark.setForeground(Color.WHITE);
@@ -376,10 +376,10 @@ public final class LoginPanel extends JLayeredPane {
         boolean dark = ThemeManager.isDark();
         setBackground(RmsColors.background());
         card.setDark(dark);
-        if (brandPanel != null) brandPanel.setFill(RmsColors.PRIMARY);
+        if (brandPanel != null) brandPanel.setFill(RmsColors.primary());
         if (formPanel != null) formPanel.setFill(RmsColors.surface());
         background.updateTheme(dark);
-        background.setAccentColor(RmsColors.PRIMARY);
+        background.setAccentColor(RmsColors.primaryAccent());
 
         emailField.setBackground(dark ? RmsColors.DARK_SURFACE : RmsColors.LIGHT_SURFACE);
         passwordField.setBackground(dark ? RmsColors.DARK_SURFACE : RmsColors.LIGHT_SURFACE);
@@ -391,14 +391,14 @@ public final class LoginPanel extends JLayeredPane {
         passwordField.setFont(passwordField.getFont().deriveFont(15f));
         themeButton.setText(dark ? "Light Theme" : "Dark Theme");
         themeButton.setToolTipText(dark ? "Switch to light theme" : "Switch to dark theme");
-        themeButton.setBackground(dark ? RmsColors.DARK_SURFACE : RmsColors.PRIMARY_LIGHT);
-        themeButton.setForeground(dark ? RmsColors.DARK_TEXT : RmsColors.PRIMARY);
+        themeButton.setBackground(dark ? RmsColors.DARK_SURFACE : RmsColors.primaryLight());
+        themeButton.setForeground(dark ? RmsColors.DARK_TEXT : RmsColors.primary());
         themeButton.setBorder(fieldBorder());
         createAccountButton.setBackground(dark ? RmsColors.DARK_SURFACE : RmsColors.LIGHT_SURFACE);
-        createAccountButton.setForeground(RmsColors.PRIMARY);
+        createAccountButton.setForeground(RmsColors.primary());
         createAccountButton.setBorder(fieldBorder());
-        signInButton.setBackground(RmsColors.PRIMARY);
-        signInButton.setForeground(Color.WHITE);
+        signInButton.setBackground(RmsColors.primaryAccent());
+        signInButton.setForeground(RmsColors.primaryForeground());
         signInButton.setBorder(fieldBorder());
         signInButton.setFocusPainted(false);
         passwordToggle.repaint();

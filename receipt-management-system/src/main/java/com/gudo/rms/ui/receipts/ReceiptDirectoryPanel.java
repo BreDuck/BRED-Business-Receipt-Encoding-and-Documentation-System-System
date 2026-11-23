@@ -9,6 +9,7 @@ import com.gudo.rms.services.ReceiptQuery;
 import com.gudo.rms.ui.RefreshablePanel;
 import com.gudo.rms.ui.components.DateField;
 import com.gudo.rms.ui.theme.RmsColors;
+import com.gudo.rms.ui.theme.ThemeManager;
 import com.gudo.rms.utils.BackgroundTask;
 
 import javax.swing.BorderFactory;
@@ -55,6 +56,8 @@ public final class ReceiptDirectoryPanel extends JPanel implements RefreshablePa
     private final JComboBox<Choice> projectBox = new JComboBox<>();
     private final JTable table = new JTable();
     private final JLabel status = new JLabel(" ");
+    private final JButton add = new JButton("+ Add Receipt");
+    private final Consumer<Boolean> themeListener = dark -> styleAddButton();
     private final Timer debounce;
     private int requestId;
     private boolean updatingCombos;
@@ -68,9 +71,7 @@ public final class ReceiptDirectoryPanel extends JPanel implements RefreshablePa
         search.putClientProperty("JTextField.placeholderText", "Search receipt no., TIN, supplier, item or project");
         supplierBox.addItem(new Choice(null, "All suppliers"));
         projectBox.addItem(new Choice(null, "All projects"));
-        JButton add = new JButton("+ Add Receipt");
-        add.setBackground(RmsColors.PRIMARY);
-        add.setForeground(java.awt.Color.WHITE);
+        styleAddButton();
         add.addActionListener(e -> onAdd.run());
         JButton refresh = new JButton("Refresh");
         refresh.setToolTipText("Load the latest receipts from the shared database");
@@ -134,11 +135,28 @@ public final class ReceiptDirectoryPanel extends JPanel implements RefreshablePa
         refreshData();
     }
 
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        ThemeManager.addThemeListener(themeListener);
+    }
+
+    @Override
+    public void removeNotify() {
+        ThemeManager.removeThemeListener(themeListener);
+        super.removeNotify();
+    }
+
+    private void styleAddButton() {
+        add.setBackground(RmsColors.primaryAccent());
+        add.setForeground(RmsColors.primaryForeground());
+    }
+
     private void installTableBehaviour() {
         DefaultTableCellRenderer link = new DefaultTableCellRenderer() {
             @Override public java.awt.Component getTableCellRendererComponent(JTable t, Object v, boolean sel, boolean focus, int r, int c) {
                 super.getTableCellRendererComponent(t, "<html><u>" + v + "</u></html>", sel, focus, r, c);
-                if (!sel) setForeground(RmsColors.PRIMARY);
+                if (!sel) setForeground(RmsColors.primary());
                 return this;
             }
         };

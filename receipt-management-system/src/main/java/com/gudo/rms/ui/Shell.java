@@ -45,6 +45,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /** The signed-in frame: sidebar menu (filtered by role), header with user info, and the active screen. */
 public final class Shell extends JPanel {
@@ -55,6 +56,8 @@ public final class Shell extends JPanel {
     private final Map<Module, JComponent> built = new EnumMap<>(Module.class);
     private final Map<Module, JToggleButton> navButtons = new EnumMap<>(Module.class);
     private final JLabel title = new JLabel();
+    private final JLabel brand = new JLabel("BRED");
+    private final Consumer<Boolean> themeListener = dark -> brand.setForeground(RmsColors.primary());
     private static final String DETAIL_CARD = "RECEIPT_DETAIL";
     private NavListPanel navList;
     private ReceiptDirectoryPanel directory;
@@ -74,6 +77,18 @@ public final class Shell extends JPanel {
         right.add(content, BorderLayout.CENTER);
         add(right, BorderLayout.CENTER);
         show(modules.get(0));
+    }
+
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        ThemeManager.addThemeListener(themeListener);
+    }
+
+    @Override
+    public void removeNotify() {
+        ThemeManager.removeThemeListener(themeListener);
+        super.removeNotify();
     }
 
     /** The menu entries this user can see, in order. */
@@ -158,9 +173,8 @@ public final class Shell extends JPanel {
         side.setLayout(new BoxLayout(side, BoxLayout.Y_AXIS));
         side.setBorder(BorderFactory.createEmptyBorder(24, 18, 18, 18));
         side.setPreferredSize(new Dimension(252, 0));
-        JLabel brand = new JLabel("BRED");
         brand.setFont(brand.getFont().deriveFont(Font.BOLD, 24f));
-        brand.setForeground(RmsColors.PRIMARY);
+        brand.setForeground(RmsColors.primary());
         JLabel sub = new JLabel("<html>Business Receipt<br>Encoding and<br>Documentation System</html>");
         sub.setForeground(RmsColors.SECONDARY_TEXT);
         sub.setFont(sub.getFont().deriveFont(Font.PLAIN, 11f));
@@ -214,10 +228,10 @@ public final class Shell extends JPanel {
                 RoundRectangle2D shape = new RoundRectangle2D.Float(1, 1, getWidth() - 3, getHeight() - 3, 14, 14);
                 g.setColor(ThemeManager.isDark()
                         ? new Color(255, 255, 255, 12)
-                        : new Color(RmsColors.PRIMARY.getRed(), RmsColors.PRIMARY.getGreen(), RmsColors.PRIMARY.getBlue(), 14));
+                        : new Color(RmsColors.primaryAccent().getRed(), RmsColors.primaryAccent().getGreen(), RmsColors.primaryAccent().getBlue(), 14));
                 g.fill(shape);
             }
-            setForeground(isSelected() && !ThemeManager.isDark() ? RmsColors.PRIMARY_DARK : RmsColors.text());
+            setForeground(isSelected() && !ThemeManager.isDark() ? RmsColors.primaryDark() : RmsColors.text());
             super.paintComponent(g);
             g.dispose();
         }
@@ -278,10 +292,10 @@ public final class Shell extends JPanel {
             RoundRectangle2D outline = new RoundRectangle2D.Float(1, (float) y + 1,
                     getWidth() - 3, ROW_HEIGHT - 3, ARC, ARC);
             g.setColor(ThemeManager.isDark()
-                    ? new Color(RmsColors.PRIMARY.getRed(), RmsColors.PRIMARY.getGreen(), RmsColors.PRIMARY.getBlue(), 38)
-                    : RmsColors.PRIMARY_LIGHT);
+                    ? new Color(RmsColors.primaryAccent().getRed(), RmsColors.primaryAccent().getGreen(), RmsColors.primaryAccent().getBlue(), 38)
+                    : RmsColors.primaryLight());
             g.fill(outline);
-            g.setColor(RmsColors.PRIMARY);
+            g.setColor(RmsColors.primaryAccent());
             g.setStroke(new BasicStroke(1.2f));
             g.draw(outline);
             g.dispose();
@@ -311,7 +325,7 @@ public final class Shell extends JPanel {
         tools.add(storage);
         if (user != null) {
             tools.add(new JLabel(user.fullName()));
-            tools.add(StatusBadge.of(user.role().label(), user.role() == Role.ADMIN ? RmsColors.PRIMARY : RmsColors.INFO));
+            tools.add(StatusBadge.of(user.role().label(), user.role() == Role.ADMIN ? RmsColors.primary() : RmsColors.INFO));
         }
         JButton theme = new JButton(ThemeManager.isDark() ? "Light mode" : "Dark mode");
         theme.addActionListener(e -> {

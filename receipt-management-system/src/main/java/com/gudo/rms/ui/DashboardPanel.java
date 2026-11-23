@@ -36,7 +36,7 @@ public final class DashboardPanel extends JPanel implements RefreshablePanel {
 
     private final AppContext ctx;
     private final Consumer<UUID> onOpen;
-    private final StatCard monthCount = new StatCard("Receipts this month", "–", RmsColors.PRIMARY);
+    private final StatCard monthCount = new StatCard("Receipts this month", "–", RmsColors::primaryAccent);
     private final StatCard monthSpend = new StatCard("Spend this month", "–", RmsColors.SUCCESS);
     private final StatCard totalCount = new StatCard("Total receipts", "–", RmsColors.INFO);
     private final StatCard projectCount = new StatCard("Projects with spend", "–", RmsColors.WARNING);

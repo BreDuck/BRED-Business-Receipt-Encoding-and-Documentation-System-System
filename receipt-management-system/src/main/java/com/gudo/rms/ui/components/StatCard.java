@@ -13,15 +13,21 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.geom.RoundRectangle2D;
+import java.util.function.Supplier;
 
 /** Summary card: small title, large value, colored accent edge. */
 public final class StatCard extends JPanel {
-    private final Color accent;
+    private final Supplier<Color> accent;
     private JLabel valueLabel;
     private JLabel titleLabel;
 
     /** Creates a stat card instance. */
     public StatCard(String title, String value, Color accent) {
+        this(title, value, () -> accent);
+    }
+
+    /** Creates a stat card whose accent can follow the active appearance. */
+    public StatCard(String title, String value, Supplier<Color> accent) {
         this.accent = accent;
         setLayout(new BorderLayout(0, 4));
         setOpaque(false);
@@ -53,7 +59,7 @@ public final class StatCard extends JPanel {
         RoundRectangle2D card = new RoundRectangle2D.Float(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
         g2.setColor(RmsColors.surface());
         g2.fill(card);
-        g2.setColor(accent);
+        g2.setColor(accent.get());
         g2.fillRoundRect(1, 10, 4, getHeight() - 20, 4, 4);
         g2.setColor(RmsColors.border());
         g2.setStroke(new BasicStroke(1f));

@@ -236,7 +236,7 @@ public final class ReceiptFormDialog extends JDialog {
         totals.add(vat, t);
         line(totals, t, 3, "Additional charges", charges);
         grandLabel.setFont(grandLabel.getFont().deriveFont(Font.BOLD, 18f));
-        grandLabel.setForeground(RmsColors.PRIMARY);
+        grandLabel.setForeground(RmsColors.primary());
         line(totals, t, 4, "GRAND TOTAL", grandLabel);
         discount.setHorizontalAlignment(SwingConstants.RIGHT);
         vat.setHorizontalAlignment(SwingConstants.RIGHT);
@@ -249,8 +249,8 @@ public final class ReceiptFormDialog extends JDialog {
         error.setForeground(RmsColors.DANGER);
         bottom.add(error, BorderLayout.CENTER);
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        save.setBackground(RmsColors.PRIMARY);
-        save.setForeground(java.awt.Color.WHITE);
+        save.setBackground(RmsColors.primaryAccent());
+        save.setForeground(RmsColors.primaryForeground());
         buttons.add(cancel);
         buttons.add(save);
         bottom.add(buttons, BorderLayout.EAST);
