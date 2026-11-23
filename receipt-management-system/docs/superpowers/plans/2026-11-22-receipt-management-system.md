@@ -4,7 +4,7 @@
 
 **Goal:** Convert the GERMS emergency-response Swing app into the Receipt Management System (RMS), with all data, users and attachments in a new Supabase project so every device shares them.
 
-**Architecture:** A new `com.gudo.rms` source tree in `/home/claude/receipt-management-system/`. Swing panels depend on services; services depend on repository interfaces; the interfaces are implemented over Supabase (Auth + PostgREST + RPC + Storage) with RLS as the security boundary. Reusable GERMS infrastructure (theme, components, `supabase` HTTP/auth client package, Shell/MainWindow structure, `admin-create-user` Edge Function) is copied over and renamed; all emergency modules are left behind.
+**Architecture:** A new `com.bred.rms` source tree in `/home/claude/receipt-management-system/`. Swing panels depend on services; services depend on repository interfaces; the interfaces are implemented over Supabase (Auth + PostgREST + RPC + Storage) with RLS as the security boundary. Reusable GERMS infrastructure (theme, components, `supabase` HTTP/auth client package, Shell/MainWindow structure, `admin-create-user` Edge Function) is copied over and renamed; all emergency modules are left behind.
 
 **Tech Stack:** Java 21, Swing + FlatLaf 3.5.4, Jackson 2.17.2 (+ `jackson-datatype-jsr310`), JUnit 5.10.3, Maven; Supabase (PostgreSQL, RLS, Auth, Storage, Edge Function in Deno/TypeScript).
 
@@ -14,7 +14,7 @@
 ## Global Constraints
 
 - Java 21 (`maven.compiler.release` 21 — my call: this environment has JDK 21 and the app then runs on any newer JDK, including the JDK 25 you used for GERMS), FlatLaf 3.5.4, Jackson 2.17.2, JUnit 5.10.3; no other new runtime dependency except `jackson-datatype-jsr310` 2.17.2.
-- Package `com.gudo.rms`, Maven artifact `rms`, window title "Receipt Management System". No remaining "GERMS", "Gudo", "Red Cross", incident/dispatch/responder wording anywhere in code, UI, docs or resources (Task 11 greps for it).
+- Package `com.bred.rms`, Maven artifact `rms`, window title "Receipt Management System". No remaining "GERMS", "bred", "Red Cross", incident/dispatch/responder wording anywhere in code, UI, docs or resources (Task 11 greps for it).
 - Roles are exactly `ADMIN` and `ENCODER`. Admin: everything. Encoder: add/edit receipts, suppliers, projects; view dashboard and reports; no delete, no Users, no Activity Log. No self-registration.
 - Currency PHP, shown as `₱1,234.50`. All money is `BigDecimal`, scale 2, `RoundingMode.HALF_UP`. Never `double`.
 - Grand total = subtotal − discount + VAT + additional charges; VAT defaults to 12% of (subtotal − discount) and may be overridden by hand.
@@ -23,7 +23,7 @@
 - All data lives in Supabase (new project); no local JSON/database storage. Config from `application.properties` in the working folder or env `RMS_SUPABASE_URL` / `RMS_SUPABASE_ANON_KEY`; only the anon/publishable key is accepted (service-role or `sb_secret_` keys are rejected at startup, as in GERMS `AppConfig`). Missing config shows a setup screen, not a crash.
 - Login is email + password via Supabase Auth; role comes only from `profiles.role` (`admin` | `encoder`).
 - RLS is the real security boundary; any signed-in active user may read; only `admin` may delete receipts/suppliers/projects, read the activity log, or manage users.
-- UI code talks only to services; services only to repository interfaces; all Supabase code lives in `com.gudo.rms.supabase` and `com.gudo.rms.repositories`.
+- UI code talks only to services; services only to repository interfaces; all Supabase code lives in `com.bred.rms.supabase` and `com.bred.rms.repositories`.
 - SQL migrations live in `database/migrations/NNN_name.sql`, are idempotent where practical, and run in numeric order.
 - Commit after every task; run `mvn -q test` before each commit.
 
@@ -40,16 +40,16 @@
 ### Task 1: Project skeleton and carried-over UI infrastructure
 
 **Files:**
-- Create: `pom.xml`, `.gitignore`, `src/main/java/com/gudo/rms/Main.java`
-- Create (copied from `$OLD/src/main/java/com/gudo/germs/…`, package and names changed): `ui/theme/ThemeManager.java`, `ui/theme/RmsColors.java` (from `GermsColors`; primary colour changes from Red Cross red `#C8102E` to a blue `#1F5FBF`, dark/light surface constants kept), `ui/components/{StatCard,SurfacePanel,StatusBadge}.java`, `utils/BackgroundTask.java`, `ui/RefreshablePanel.java`
-- Create (copied from `$OLD/.../supabase/`, renamed package `com.gudo.rms.supabase`): `SupabaseHttp, RestClient, AuthClient, SessionManager, Session, SupabaseException`; and `config/AppConfig.java` (env vars renamed `RMS_SUPABASE_URL` / `RMS_SUPABASE_ANON_KEY`, privileged-key rejection kept)
-- Create: `src/test/java/com/gudo/rms/SmokeTest.java`
+- Create: `pom.xml`, `.gitignore`, `src/main/java/com/bred/rms/Main.java`
+- Create (copied from `$OLD/src/main/java/com/bred/germs/…`, package and names changed): `ui/theme/ThemeManager.java`, `ui/theme/RmsColors.java` (from `GermsColors`; primary colour changes from Red Cross red `#C8102E` to a blue `#1F5FBF`, dark/light surface constants kept), `ui/components/{StatCard,SurfacePanel,StatusBadge}.java`, `utils/BackgroundTask.java`, `ui/RefreshablePanel.java`
+- Create (copied from `$OLD/.../supabase/`, renamed package `com.bred.rms.supabase`): `SupabaseHttp, RestClient, AuthClient, SessionManager, Session, SupabaseException`; and `config/AppConfig.java` (env vars renamed `RMS_SUPABASE_URL` / `RMS_SUPABASE_ANON_KEY`, privileged-key rejection kept)
+- Create: `src/test/java/com/bred/rms/SmokeTest.java`
 
 **Interfaces:**
 - Produces (besides the theme/components below): the copied Supabase client API unchanged (`RestClient.select/rpc/insertMinimal/patch/delete/invokeFunction`, `AuthClient.signIn/refresh/signOut`, `SessionManager`); `AuthClient.signUp` is deleted (no self-registration).
 - Produces: `RmsColors.{PRIMARY, SUCCESS, WARNING, DANGER, INFO, SECONDARY_TEXT, background(), surface(), text(), border()}`; `ThemeManager.{installSaved(), toggle(), isDark(), addThemeListener(Consumer<Boolean>)}`; `StatCard(String title, String value, Color accent)` with `setValue(String)`; `SurfacePanel(LayoutManager, Supplier<Color>)`; `BackgroundTask.run(Callable<T>, Consumer<T> onOk, Consumer<Throwable> onErr)`.
 
-- [ ] **Step 1:** `git init` in the project folder; write `pom.xml` from `$OLD/pom.xml` with groupId `com.gudo`, artifactId `rms`, main class `com.gudo.rms.Main`, plus `jackson-datatype-jsr310`.
+- [ ] **Step 1:** `git init` in the project folder; write `pom.xml` from `$OLD/pom.xml` with groupId `com.bred`, artifactId `rms`, main class `com.bred.rms.Main`, plus `jackson-datatype-jsr310`.
 - [ ] **Step 2: Write failing test** `SmokeTest.themeColorsExist()` asserting `RmsColors.PRIMARY != null` and `ThemeManager.isDark()` returns without throwing.
 - [ ] **Step 3:** Run `mvn -q test` → expected FAIL (classes missing).
 - [ ] **Step 4:** Copy and rename the files listed above; delete `forSeverity`/`forIncidentStatus`/`StatusBadge.severity/incidentStatus`; add `StatusBadge.of(String text, Color fill)` usage only. Keep `ThemeManager` preference node name unchanged in behaviour.
@@ -60,7 +60,7 @@
 
 **Files:**
 - Create: `models/{Role,User,ReceiptType,ReceiptItem,Receipt,Supplier,Project,Attachment,ActivityEntry}.java`, `models/ReceiptMath.java`
-- Test: `src/test/java/com/gudo/rms/models/ReceiptMathTest.java`
+- Test: `src/test/java/com/bred/rms/models/ReceiptMathTest.java`
 
 **Interfaces:**
 - Produces:
@@ -88,7 +88,7 @@
 - Create: `repositories/{ReceiptRepository,SupplierRepository,ProjectRepository,UserRepository,ActivityLogRepository,AttachmentStore}.java`
 - Create: `repositories/supabase/{SupabaseReceiptRepository,SupabaseSupplierRepository,SupabaseProjectRepository,SupabaseUserRepository,SupabaseActivityLogRepository,SupabaseAttachmentStore}.java`
 - Modify: `supabase/SupabaseHttp.java` (add `byte[] sendBinary(method, path, byte[] body, contentType, token)` and `byte[] download(path, token)`; keep the text API)
-- Test: `src/test/java/com/gudo/rms/repositories/SupabaseRepositoriesTest.java` (using `com.sun.net.httpserver.HttpServer` as a fake Supabase), `src/test/java/com/gudo/rms/repositories/AttachmentRulesTest.java`; SQL validated by `database/validate.sh`
+- Test: `src/test/java/com/bred/rms/repositories/SupabaseRepositoriesTest.java` (using `com.sun.net.httpserver.HttpServer` as a fake Supabase), `src/test/java/com/bred/rms/repositories/AttachmentRulesTest.java`; SQL validated by `database/validate.sh`
 
 **Interfaces:**
 - Produces (Java):
@@ -118,7 +118,7 @@
 - Create: `services/{AuthService,AuthException,ReceiptService,SupplierService,ProjectService,UserService,ReportService}.java`
 - Create: `ui/{MainWindow,Shell}.java`, `ui/auth/LoginPanel.java` (new, simple: email, password, "Sign in"; no registration, no `Background3D`), `ui/auth/SetupPanel.java` (shown when URL/anon key are missing: explains the two settings and where to put them)
 - Modify: `Main.java`
-- Test: `src/test/java/com/gudo/rms/services/{ReceiptServiceTest,SupplierProjectServiceTest,AccessPolicyTest}.java`
+- Test: `src/test/java/com/bred/rms/services/{ReceiptServiceTest,SupplierProjectServiceTest,AccessPolicyTest}.java`
 
 **Interfaces:**
 - Consumes: all repository interfaces (Task 3).
@@ -141,7 +141,7 @@
 **Files:**
 - Create: `ui/receipts/ReceiptDirectoryPanel.java`, `ui/receipts/ReceiptTableModel.java`
 - Modify: `ui/Shell.java` (wire `Module.RECEIPTS`)
-- Test: `src/test/java/com/gudo/rms/ui/ReceiptTableModelTest.java`
+- Test: `src/test/java/com/bred/rms/ui/ReceiptTableModelTest.java`
 
 **Interfaces:**
 - Consumes: `ReceiptService.search`, `SupplierService.findAll`, `ProjectService.findAll`.
@@ -155,7 +155,7 @@
 **Files:**
 - Create: `ui/receipts/ReceiptFormDialog.java`, `ui/receipts/LineItemsTableModel.java`
 - Modify: `ui/Shell.java` (open dialog from directory/detail)
-- Test: `src/test/java/com/gudo/rms/ui/LineItemsTableModelTest.java`
+- Test: `src/test/java/com/bred/rms/ui/LineItemsTableModelTest.java`
 
 **Interfaces:**
 - Consumes: `ReceiptService.save`, `AttachmentStore.store`, `ReceiptMath`.
@@ -169,7 +169,7 @@
 **Files:**
 - Create: `ui/receipts/ReceiptDetailPanel.java`, `ui/receipts/PaperReceiptView.java`
 - Modify: `ui/Shell.java` (card for detail; directory `onOpen` shows it; Back returns to the directory)
-- Test: `src/test/java/com/gudo/rms/ui/PaperReceiptViewTest.java`
+- Test: `src/test/java/com/bred/rms/ui/PaperReceiptViewTest.java`
 
 **Interfaces:**
 - Produces: `PaperReceiptView(Receipt, Supplier, Project /*nullable*/)` — a white, fixed-width (~420 px) panel in a monospace-style font with: supplier name/address/TIN/contact at the top, receipt type and number, date, item rows (description, qty × unit price, subtotal), then Subtotal, Discount, VAT, Additional charges, **TOTAL**, and a footer "Encoded by … on …, last modified …"; `plainText(): String` returns the same content as text. `ReceiptDetailPanel(AppContext, UUID receiptId, Runnable onBack)` shows it plus Edit, Delete (visible to Admin only, with confirm dialog), Open attachment (preview PNG/JPG in a dialog, open PDF with `Desktop.open`; missing file → friendly message).
@@ -193,7 +193,7 @@
 **Files:**
 - Create: `ui/DashboardPanel.java`, `ui/reports/ReportsPanel.java`
 - Modify: `services/ReportService.java`, `ui/Shell.java`
-- Test: `src/test/java/com/gudo/rms/services/ReportServiceTest.java`
+- Test: `src/test/java/com/bred/rms/services/ReportServiceTest.java`
 
 **Interfaces:**
 - Produces: `record Total(String label, int receiptCount, BigDecimal amount)`; `ReportService.totalsByProject(LocalDate from, LocalDate to): List<Total>` (receipts without a project grouped as "Unassigned"); `totalsBySupplier(from, to)`; `totalsByMonth(from, to)`; `exportCsv(List<Receipt>, Path) throws IOException` (columns: Receipt No., Date, Type, Supplier, TIN, Project, Subtotal, Discount, VAT, Additional Charges, Grand Total).
@@ -205,7 +205,7 @@
 **Files:**
 - Create: `ui/admin/UserManagementPanel.java`, `ui/admin/ActivityLogPanel.java`, `ui/SettingsPanel.java`
 - Modify: `services/UserService.java`, `ui/Shell.java`
-- Test: `src/test/java/com/gudo/rms/services/UserServiceTest.java`
+- Test: `src/test/java/com/bred/rms/services/UserServiceTest.java`
 
 **Interfaces:**
 - Consumes: `UserRepository`, `ActivityLogRepository`.
@@ -218,8 +218,8 @@
 
 **Files:**
 - Create: `README.md`, `SETUP.md`, `ARCHITECTURE.md`, `application.properties.example`. `SETUP.md` is step-by-step for a non-expert: create the new Supabase project; run migrations 001-004 in the SQL editor in order; deploy `admin-create-user` (CLI steps); create the first admin (bootstrap steps in `seed_data.sql`: create the Auth user in the dashboard, then insert the `profiles` row as `admin`); copy URL + anon key into `application.properties`; run/package commands; a **first live run checklist** (sign in, add supplier, add receipt with PDF, open it from a second device/session, encoder cannot delete, admin can).
-- Test: `src/test/java/com/gudo/rms/CleanupTest.java`
+- Test: `src/test/java/com/bred/rms/CleanupTest.java`
 
-- [ ] **Step 1: Write failing test** `noGermsLeftovers`: walks `src/` and `*.md` in the project root and fails if any file contains (case-insensitive) `germs`, `gudo emergency`, `red cross`, `incident`, `dispatch`, `responder`, `evacuation` (excluding `pom.xml` groupId `com.gudo`, and this `docs/` folder).
+- [ ] **Step 1: Write failing test** `noGermsLeftovers`: walks `src/` and `*.md` in the project root and fails if any file contains (case-insensitive) `germs`, `bred emergency`, `red cross`, `incident`, `dispatch`, `responder`, `evacuation` (excluding `pom.xml` groupId `com.bred`, and this `docs/` folder).
 - [ ] **Step 2:** Run → FAIL if anything remains; fix each hit. **Step 3:** Run full `mvn -q test`, `bash database/validate.sh`, and `mvn -q package`; start the jar once under `xvfb-run` with no config → setup screen appears. Commit `docs: RMS documentation and GERMS cleanup`.
 - [ ] **Step 4:** Zip the project (excluding `target/`, `.git/`) and send it to the user with a short note: what was verified here (unit tests, fake-server tests, SQL validation) and what only they can verify (first live run against their Supabase project, using the checklist in `SETUP.md`).

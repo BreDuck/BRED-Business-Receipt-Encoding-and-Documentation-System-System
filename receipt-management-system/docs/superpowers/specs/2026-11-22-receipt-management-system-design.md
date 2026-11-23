@@ -46,7 +46,7 @@ A **new** Supabase project (Clark creates it; no connector is available here, so
 ## Design
 **Config:** `application.properties` or env `RMS_SUPABASE_URL` / `RMS_SUPABASE_ANON_KEY`; if missing, the app shows a setup screen instead of crashing.
 
-**Package/artifact:** `com.gudo.rms`, artifact `rms`, window title "Receipt Management System". Keep the Maven/FlatLaf setup but target Java 21 (runs on newer JDKs too; this sandbox has JDK 21).
+**Package/artifact:** `com.bred.rms`, artifact `rms`, window title "Receipt Management System". Keep the Maven/FlatLaf setup but target Java 21 (runs on newer JDKs too; this sandbox has JDK 21).
 
 **Roles (decided by Clark):** only two, since a few people in the office will use it. Admin (everything, including
 user management, delete, activity log) and Encoder (add/edit receipts, suppliers, projects; view reports; no delete,

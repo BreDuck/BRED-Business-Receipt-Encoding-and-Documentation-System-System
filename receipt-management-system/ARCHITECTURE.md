@@ -2,7 +2,7 @@
 
 ## Layers
 ```
-Swing UI (com.gudo.rms.ui)         screens, dialogs, no network code
+Swing UI (com.bred.rms.ui)         screens, dialogs, no network code
    ↓
 Services (…services)               rules: validation, permissions, totals, reports
    ↓
@@ -15,7 +15,7 @@ the rest can be tested with in-memory fakes.
 
 ## Two storage modes
 `AppContext` wires one of two sets of repositories behind the same interfaces, so the UI and services never know which:
-- **Local (default, no configuration):** `com.gudo.rms.local`. `LocalDatabase` keeps everything in `data.json` (written through a temporary file, previous version kept as `data.json.bak`, passwords stored as salted PBKDF2 hashes), `LocalAttachmentStore` keeps scans under `attachments/`, `LocalAuth` signs in against the stored accounts. First run creates `admin@rms.local`. It enforces the same rules the database does (duplicate receipts, last active administrator, unique email).
+- **Local (default, no configuration):** `com.bred.rms.local`. `LocalDatabase` keeps everything in `data.json` (written through a temporary file, previous version kept as `data.json.bak`, passwords stored as salted PBKDF2 hashes), `LocalAttachmentStore` keeps scans under `attachments/`, `LocalAuth` signs in against the stored accounts. First run creates `admin@rms.local`. It enforces the same rules the database does (duplicate receipts, last active administrator, unique email).
 - **Supabase:** used when the Supabase URL and anon key are configured; described below.
 
 ## Data and security (Supabase mode)
@@ -32,7 +32,7 @@ Amounts are `BigDecimal` with two decimals, rounded half-up. Subtotal = Σ quant
 ## Layout
 | Path | What is there |
 |---|---|
-| `src/main/java/com/gudo/rms/models` | Plain records (Receipt, Supplier, Project, User…) and money maths |
+| `src/main/java/com/bred/rms/models` | Plain records (Receipt, Supplier, Project, User…) and money maths |
 | `…/services` | ReceiptService, SupplierService, ProjectService, UserService, ReportService, AuthService |
 | `…/repositories` | Interfaces plus `supabase/` implementations |
 | `…/supabase` | HTTP client, session handling, Auth client, config |

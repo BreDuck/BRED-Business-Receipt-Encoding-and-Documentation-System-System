@@ -1,7 +1,0 @@
-package com.gudo.rms.ui;
-
-/** A screen that can reload its server-backed data without rebuilding its UI. */
-public interface RefreshablePanel {
-    /** Refreshes data. */
-    void refreshData();
-}
