@@ -36,7 +36,14 @@ public final class ThemeManager {
     /** Available application color palettes. */
     public enum Appearance {
         DEFAULT("Default"),
-        BREDUCK_SIGNATURE("BreDuck's Signature");
+        BREDUCK_SIGNATURE("BreDuck's Signature"),
+        DUTERTES_SIGNATURE("Duterte for 2028"),
+        SHRIMPS_AUCLAIR("Shrimp's Auclair"),
+        COSMIC_VIOLET("Cosmic Violet"),
+        CHILLI_PEPPER_RED("Chilli Pepper Red"),
+        MAHOGANY_WOOD("Mahogany wood"),
+        MILLIONAIRES_GOLD("Millionaire's Gold"),
+        SILVER_LINING("Silver Lining");
 
         private final String label;
 
@@ -123,7 +130,7 @@ public final class ThemeManager {
                 Map.entry("Table.rowHeight", "28"),
                 Map.entry("TableHeader.height", "32"),
                 Map.entry("TabbedPane.tabHeight", "34")));
-        if (appearance == Appearance.BREDUCK_SIGNATURE) {
+        if (appearance != Appearance.DEFAULT) {
             defaults.put("List.selectionBackground", toHex(RmsColors.primaryLight()));
             defaults.put("List.selectionForeground", toHex(RmsColors.text()));
         }

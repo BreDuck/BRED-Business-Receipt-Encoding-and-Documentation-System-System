@@ -35,4 +35,60 @@ class ThemeManagerTest {
             ThemeManager.apply(previousDark);
         }
     }
+
+    @Test
+    void dutertesSignatureUsesModeAppropriateGreens() {
+        ThemeManager.installSaved();
+        ThemeManager.Appearance previousAppearance = ThemeManager.appearance();
+        boolean previousDark = ThemeManager.isDark();
+        try {
+            ThemeManager.setAppearance(ThemeManager.Appearance.DUTERTES_SIGNATURE);
+
+            ThemeManager.apply(false);
+            assertEquals(Color.decode("#A5D6A7"), RmsColors.primaryAccent());
+            assertEquals(Color.decode("#F1F8F1"), RmsColors.background());
+            assertEquals(Color.decode("#DDF1DE"), RmsColors.primaryLight());
+            assertEquals(Color.decode("#173A1A"), RmsColors.primaryForeground());
+
+            ThemeManager.apply(true);
+            assertEquals(Color.decode("#2E7D32"), RmsColors.primaryAccent());
+            assertEquals(Color.decode("#263B2A"), RmsColors.primaryLight());
+            assertEquals(Color.WHITE, RmsColors.primaryForeground());
+        } finally {
+            ThemeManager.setAppearance(previousAppearance);
+            ThemeManager.apply(previousDark);
+        }
+    }
+
+    @Test
+    void newSignaturesAreAvailableAndUseLightAndDarkBases() {
+        ThemeManager.installSaved();
+        ThemeManager.Appearance previousAppearance = ThemeManager.appearance();
+        boolean previousDark = ThemeManager.isDark();
+        try {
+            ThemeManager.Appearance[] signatures = {
+                ThemeManager.Appearance.SHRIMPS_AUCLAIR,
+                ThemeManager.Appearance.COSMIC_VIOLET,
+                ThemeManager.Appearance.CHILLI_PEPPER_RED,
+                ThemeManager.Appearance.MAHOGANY_WOOD,
+                ThemeManager.Appearance.MILLIONAIRES_GOLD,
+                ThemeManager.Appearance.SILVER_LINING
+            };
+
+            for (ThemeManager.Appearance signature : signatures) {
+                ThemeManager.setAppearance(signature);
+                ThemeManager.apply(false);
+                assertEquals(signature, ThemeManager.appearance());
+                assertEquals(RmsColors.LIGHT_TEXT, RmsColors.text());
+
+                ThemeManager.apply(true);
+                assertEquals(signature, ThemeManager.appearance());
+                assertEquals(RmsColors.DARK_BACKGROUND, RmsColors.background());
+                assertEquals(RmsColors.DARK_SURFACE, RmsColors.surface());
+            }
+        } finally {
+            ThemeManager.setAppearance(previousAppearance);
+            ThemeManager.apply(previousDark);
+        }
+    }
 }
