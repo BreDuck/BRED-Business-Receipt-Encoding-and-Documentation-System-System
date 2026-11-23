@@ -10,11 +10,13 @@ import javax.swing.JButton;
 import javax.swing.Icon;
 import javax.swing.JLabel;
 import javax.swing.JLayeredPane;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.border.AbstractBorder;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Cursor;
@@ -30,6 +32,8 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Path2D;
+import java.awt.geom.RoundRectangle2D;
+import java.awt.Shape;
 import java.util.function.Consumer;
 
 /** Sign-in screen for the Receipt Management System. */
@@ -41,16 +45,19 @@ public final class LoginPanel extends JLayeredPane {
     }
 
     private final LoginHandler loginHandler;
-    private final JTextField emailField = new JTextField();
-    private final JPasswordField passwordField = new JPasswordField();
+    private final JTextField emailField = new RoundedLoginTextField();
+    private final JPasswordField passwordField = new RoundedLoginPasswordField();
     private final JLabel hintLabel = new JLabel(" ", SwingConstants.CENTER);
     private final JLabel messageLabel = new JLabel(" ", SwingConstants.CENTER);
-    private final JButton signInButton = new JButton("Sign In");
-    private final JButton themeButton = new JButton();
+    private final JButton signInButton = new RoundedButton("Sign In");
+    private final JButton createAccountButton = new RoundedButton("Create Account");
+    private final JButton themeButton = new RoundedButton();
     private final JButton passwordToggle = new JButton(new EyeIcon(false));
-    private final JPanel card;
+    private final RoundedCardPanel card;
     private final JPanel cardWrapper = new JPanel(new GridBagLayout());
     private final Background3D background;
+    private RoundedSidePanel brandPanel;
+    private RoundedSidePanel formPanel;
     private boolean busy;
 
     private final Consumer<Boolean> themeListener = dark -> applyTheme();
@@ -66,7 +73,10 @@ public final class LoginPanel extends JLayeredPane {
         background.setOpaque(false);
         add(background, Integer.valueOf(0));
 
-        card = new JPanel(new GridLayout(1, 2));
+        card = new RoundedCardPanel();
+        card.setLayout(new GridLayout(1, 2));
+        card.setOpaque(false);
+        card.setBorder(new RoundedCardBorder(RmsColors.border(), 26));
         card.setPreferredSize(new Dimension(860, 520));
 
         JPanel brand = buildBrandPanel();
@@ -86,10 +96,11 @@ public final class LoginPanel extends JLayeredPane {
     }
 
     private JPanel buildBrandPanel() {
-        JPanel panel = new JPanel();
+        RoundedSidePanel panel = new RoundedSidePanel(true);
+        brandPanel = panel;
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(BorderFactory.createEmptyBorder(44, 42, 44, 42));
-        panel.setBackground(RmsColors.PRIMARY);
+        panel.setFill(RmsColors.PRIMARY);
 
         JLabel mark = new JLabel("RMS", SwingConstants.CENTER);
         mark.setForeground(Color.WHITE);
@@ -128,16 +139,20 @@ public final class LoginPanel extends JLayeredPane {
     }
 
     private JPanel buildFormPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
+        RoundedSidePanel panel = new RoundedSidePanel(false);
+        formPanel = panel;
+        panel.setLayout(new BorderLayout());
         panel.setBorder(BorderFactory.createEmptyBorder(24, 36, 24, 36));
 
         JPanel top = new JPanel(new BorderLayout());
         top.setOpaque(false);
-        themeButton.setContentAreaFilled(false);
-        themeButton.setBorderPainted(false);
+        themeButton.putClientProperty("JButton.buttonType", "roundRect");
+        themeButton.setContentAreaFilled(true);
+        themeButton.setBorderPainted(true);
         themeButton.setFocusPainted(false);
         themeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        themeButton.setPreferredSize(new Dimension(124, 46));
+        themeButton.setPreferredSize(new Dimension(142, 46));
+        themeButton.setMinimumSize(new Dimension(142, 46));
         themeButton.addActionListener(event -> ThemeManager.toggle());
         top.add(themeButton, BorderLayout.EAST);
         panel.add(top, BorderLayout.NORTH);
@@ -171,7 +186,8 @@ public final class LoginPanel extends JLayeredPane {
         form.add(emailLabel, c);
 
         c.gridy = 3;
-        emailField.setPreferredSize(new Dimension(320, 48));
+        emailField.setPreferredSize(new Dimension(320, 52));
+        emailField.setMinimumSize(new Dimension(240, 52));
         form.add(emailField, c);
 
         c.gridy = 4;
@@ -185,7 +201,8 @@ public final class LoginPanel extends JLayeredPane {
         JPanel passwordRow = new JPanel(new BorderLayout(6, 0));
         passwordRow.setOpaque(false);
         passwordRow.add(passwordField, BorderLayout.CENTER);
-        passwordToggle.setPreferredSize(new Dimension(48, 48));
+        passwordToggle.setPreferredSize(new Dimension(48, 52));
+        passwordToggle.setMinimumSize(new Dimension(48, 52));
         passwordToggle.setToolTipText("Show password");
         passwordToggle.getAccessibleContext().setAccessibleName("Show password");
         passwordToggle.setContentAreaFilled(false);
@@ -208,13 +225,28 @@ public final class LoginPanel extends JLayeredPane {
 
         c.gridy = 8;
         c.insets = new Insets(4, 0, 0, 0);
-        signInButton.setPreferredSize(new Dimension(320, 52));
-        signInButton.setMinimumSize(new Dimension(320, 52));
+        JPanel actions = new JPanel(new GridLayout(1, 2, 10, 0));
+        actions.setOpaque(false);
+        styleActionButton(createAccountButton);
+        createAccountButton.setToolTipText("Accounts are created by your administrator");
+        createAccountButton.addActionListener(event -> JOptionPane.showMessageDialog(
+                this, "Please contact your system administrator to create an account.",
+                "Create Account", JOptionPane.INFORMATION_MESSAGE));
+        styleActionButton(signInButton);
         signInButton.setFont(signInButton.getFont().deriveFont(Font.BOLD, 14f));
-        form.add(signInButton, c);
+        actions.add(createAccountButton);
+        actions.add(signInButton);
+        form.add(actions, c);
 
         panel.add(form, BorderLayout.CENTER);
         return panel;
+    }
+
+    private static void styleActionButton(JButton button) {
+        button.putClientProperty("JButton.buttonType", "roundRect");
+        button.setPreferredSize(new Dimension(150, 48));
+        button.setMinimumSize(new Dimension(120, 48));
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     }
 
     private void togglePasswordVisibility() {
@@ -259,6 +291,7 @@ public final class LoginPanel extends JLayeredPane {
     private void setBusy(boolean value) {
         busy = value;
         signInButton.setEnabled(!value);
+        createAccountButton.setEnabled(!value);
         emailField.setEnabled(!value);
         passwordField.setEnabled(!value);
         signInButton.setText(value ? "Signing In..." : "Sign In");
@@ -296,24 +329,32 @@ public final class LoginPanel extends JLayeredPane {
     private void applyTheme() {
         boolean dark = ThemeManager.isDark();
         setBackground(RmsColors.background());
-        card.setBackground(RmsColors.surface());
+        card.setBorder(new RoundedCardBorder(RmsColors.border(), 26));
+        if (brandPanel != null) brandPanel.setFill(RmsColors.PRIMARY);
+        if (formPanel != null) formPanel.setFill(RmsColors.surface());
         background.updateTheme(dark);
         background.setAccentColor(RmsColors.PRIMARY);
-
-        for (java.awt.Component component : card.getComponents()) {
-            if (component instanceof JPanel panel) {
-                if (!panel.getBackground().equals(RmsColors.PRIMARY)) {
-                    panel.setBackground(RmsColors.surface());
-                }
-            }
-        }
 
         emailField.setBackground(dark ? RmsColors.DARK_SURFACE : RmsColors.LIGHT_SURFACE);
         passwordField.setBackground(dark ? RmsColors.DARK_SURFACE : RmsColors.LIGHT_SURFACE);
         emailField.setForeground(RmsColors.text());
         passwordField.setForeground(RmsColors.text());
+        emailField.setBorder(fieldBorder());
+        passwordField.setBorder(fieldBorder());
+        emailField.setFont(emailField.getFont().deriveFont(15f));
+        passwordField.setFont(passwordField.getFont().deriveFont(15f));
         themeButton.setText(dark ? "Light Theme" : "Dark Theme");
-        themeButton.setForeground(RmsColors.text());
+        themeButton.setToolTipText(dark ? "Switch to light theme" : "Switch to dark theme");
+        themeButton.setBackground(dark ? RmsColors.DARK_SURFACE : RmsColors.PRIMARY_LIGHT);
+        themeButton.setForeground(dark ? RmsColors.DARK_TEXT : RmsColors.PRIMARY);
+        themeButton.setBorder(fieldBorder());
+        createAccountButton.setBackground(dark ? RmsColors.DARK_SURFACE : RmsColors.LIGHT_SURFACE);
+        createAccountButton.setForeground(RmsColors.PRIMARY);
+        createAccountButton.setBorder(fieldBorder());
+        signInButton.setBackground(RmsColors.PRIMARY);
+        signInButton.setForeground(Color.WHITE);
+        signInButton.setBorder(fieldBorder());
+        signInButton.setFocusPainted(false);
         passwordToggle.repaint();
 
         for (java.awt.Component component : card.getComponents()) {
@@ -321,6 +362,12 @@ public final class LoginPanel extends JLayeredPane {
         }
         revalidate();
         repaint();
+    }
+
+    private javax.swing.border.Border fieldBorder() {
+        return BorderFactory.createCompoundBorder(
+                new RoundedFieldBorder(RmsColors.border(), 16),
+                BorderFactory.createEmptyBorder(0, 12, 0, 12));
     }
 
     private void applyTextTheme(java.awt.Component component, boolean dark) {
@@ -389,6 +436,154 @@ public final class LoginPanel extends JLayeredPane {
                 g.drawLine(x + 3, y + 17, x + 17, y + 3);
             }
             g.dispose();
+        }
+    }
+
+    private static final class RoundedFieldBorder extends AbstractBorder {
+        private final Color color;
+        private final int radius;
+
+        private RoundedFieldBorder(Color color, int radius) {
+            this.color = color;
+            this.radius = radius;
+        }
+
+        @Override
+        public Insets getBorderInsets(Component component, Insets insets) {
+            insets.set(1, 1, 1, 1);
+            return insets;
+        }
+
+        @Override
+        public Insets getBorderInsets(Component component) {
+            return new Insets(1, 1, 1, 1);
+        }
+
+        @Override
+        public void paintBorder(Component component, Graphics graphics, int x, int y, int width, int height) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(color);
+            g.drawRoundRect(x, y, width - 1, height - 1, radius, radius);
+            g.dispose();
+        }
+    }
+
+    private static final class RoundedCardBorder extends AbstractBorder {
+        private final Color color;
+        private final int radius;
+
+        private RoundedCardBorder(Color color, int radius) {
+            this.color = color;
+            this.radius = radius;
+        }
+
+        @Override
+        public Insets getBorderInsets(Component component, Insets insets) {
+            insets.set(1, 1, 1, 1);
+            return insets;
+        }
+
+        @Override
+        public Insets getBorderInsets(Component component) {
+            return new Insets(1, 1, 1, 1);
+        }
+
+        @Override
+        public void paintBorder(Component component, Graphics graphics, int x, int y, int width, int height) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(color);
+            g.draw(new RoundRectangle2D.Float(x, y, width - 1, height - 1, radius, radius));
+            g.dispose();
+        }
+    }
+
+    private static final class RoundedSidePanel extends JPanel {
+        private final boolean leftSide;
+        private Color fill = RmsColors.surface();
+        private final int radius = 26;
+
+        private RoundedSidePanel(boolean leftSide) {
+            this.leftSide = leftSide;
+            setOpaque(false);
+        }
+
+        private void setFill(Color fill) {
+            this.fill = fill;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int width = getWidth();
+            int height = getHeight();
+            g.setColor(fill);
+            g.fill(new RoundRectangle2D.Float(0, 0, width, height, radius, radius));
+            if (leftSide) {
+                g.fillRect(radius / 2, 0, width - radius / 2, height);
+            } else {
+                g.fillRect(0, 0, width - radius / 2, height);
+            }
+            g.dispose();
+            super.paintComponent(graphics);
+        }
+    }
+
+    private static class RoundedButton extends JButton {
+        private RoundedButton() { }
+
+        private RoundedButton(String text) {
+            super(text);
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            Shape shape = new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 16, 16);
+            g.clip(shape);
+            super.paintComponent(g);
+            g.dispose();
+        }
+    }
+
+    private static class RoundedLoginTextField extends JTextField {
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.clip(new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 16, 16));
+            super.paintComponent(g);
+            g.dispose();
+        }
+    }
+
+    private static class RoundedLoginPasswordField extends JPasswordField {
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.clip(new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 16, 16));
+            super.paintComponent(g);
+            g.dispose();
+        }
+    }
+
+    private static final class RoundedCardPanel extends JPanel {
+        private final int radius = 26;
+
+        @Override
+        protected void paintChildren(Graphics graphics) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.clip(new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), radius, radius));
+            super.paintChildren(g);
+            g.dispose();
+
+            if (getBorder() != null) {
+                Graphics2D borderGraphics = (Graphics2D) graphics.create();
+                getBorder().paintBorder(this, borderGraphics, 0, 0, getWidth(), getHeight());
+                borderGraphics.dispose();
+            }
         }
     }
 }
