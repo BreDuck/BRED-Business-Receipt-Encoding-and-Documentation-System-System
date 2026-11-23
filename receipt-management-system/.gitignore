@@ -1,0 +1,7 @@
+target/
+.superpowers/
+*.class
+application.properties
+.DS_Store
+rms-data/
+RMS-Data/

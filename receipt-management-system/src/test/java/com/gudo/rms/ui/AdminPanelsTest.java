@@ -1,0 +1,48 @@
+package com.gudo.rms.ui;
+
+import com.gudo.rms.config.AppContext;
+import com.gudo.rms.models.ActivityEntry;
+import com.gudo.rms.models.Role;
+import com.gudo.rms.models.User;
+import com.gudo.rms.repositories.ActivityLogRepository;
+import com.gudo.rms.repositories.UserRepository;
+import com.gudo.rms.security.Module;
+import com.gudo.rms.services.ProjectService;
+import com.gudo.rms.services.ReceiptService;
+import com.gudo.rms.services.SupplierService;
+import com.gudo.rms.support.Fakes;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+
+class AdminPanelsTest {
+    @Test
+    void adminScreensBuildOverFakeData() {
+        User admin = Fakes.admin();
+        UserRepository users = new UserRepository() {
+            @Override public List<User> findAll() { return List.of(admin); }
+            @Override public Optional<User> findById(UUID id) { return Optional.of(admin); }
+            @Override public User create(String email, String fullName, Role role, char[] password) { return admin; }
+            @Override public void update(UUID id, String fullName, Role role, boolean active) { }
+        };
+        ActivityLogRepository log = () -> List.of(new ActivityEntry(Instant.now(), admin.id(), "Ada Admin", "receipts.insert", "OR-1"));
+        var receipts = new Fakes.Receipts();
+        var suppliers = new Fakes.Suppliers();
+        var projects = new Fakes.Projects();
+        var attachments = new Fakes.Attachments();
+        AppContext ctx = AppContext.forTesting(admin, new ReceiptService(receipts, suppliers, projects, attachments, () -> admin),
+                new SupplierService(suppliers, receipts, () -> admin), new ProjectService(projects, receipts, () -> admin),
+                attachments, users, log);
+        Shell shell = new Shell(ctx, () -> { });
+        assertDoesNotThrow(() -> shell.show(Module.USERS));
+        assertDoesNotThrow(() -> shell.show(Module.ACTIVITY_LOG));
+        assertDoesNotThrow(() -> shell.show(Module.SETTINGS));
+        assertDoesNotThrow(() -> shell.show(Module.SUPPLIERS));
+        assertDoesNotThrow(() -> shell.show(Module.PROJECTS));
+    }
+}

@@ -1,0 +1,438 @@
+package com.gudo.rms.local;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.gudo.rms.models.ActivityEntry;
+import com.gudo.rms.models.Attachment;
+import com.gudo.rms.models.Project;
+import com.gudo.rms.models.Receipt;
+import com.gudo.rms.models.ReceiptItem;
+import com.gudo.rms.models.ReceiptType;
+import com.gudo.rms.models.Role;
+import com.gudo.rms.models.Supplier;
+import com.gudo.rms.models.User;
+import com.gudo.rms.models.ValidationException;
+import com.gudo.rms.repositories.ActivityLogRepository;
+import com.gudo.rms.repositories.ProjectRepository;
+import com.gudo.rms.repositories.ReceiptRepository;
+import com.gudo.rms.repositories.RepositoryException;
+import com.gudo.rms.repositories.SupplierRepository;
+import com.gudo.rms.repositories.UserRepository;
+import com.gudo.rms.services.CurrentUser;
+import com.gudo.rms.supabase.SupabaseHttp;
+
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.function.Function;
+
+/**
+ * Keeps all data in one JSON file ({@code data.json}) inside a folder on this computer. Every change is written
+ * straight away (via a temporary file, with the previous version kept as {@code data.json.bak}). Passwords are stored
+ * as salted PBKDF2 hashes, never as text.
+ */
+public final class LocalDatabase {
+    /** Email and password of the account created on first run. */
+    public static final String DEFAULT_ADMIN_EMAIL = "admin@rms.local";
+    static final String DEFAULT_ADMIN_PASSWORD = "admin123";
+    private static final int ITERATIONS = 120_000;
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    private record Account(User user, String salt, String hash) { }
+
+    private static final class State {
+        final List<Account> accounts = new ArrayList<>();
+        final List<Supplier> suppliers = new ArrayList<>();
+        final List<Project> projects = new ArrayList<>();
+        final List<Receipt> receipts = new ArrayList<>();
+        final List<ActivityEntry> activity = new ArrayList<>();
+    }
+
+    private final Path dir;
+    private final Path file;
+    private State state;
+    private CurrentUser who = () -> null;
+
+    private LocalDatabase(Path dir) {
+        this.dir = dir;
+        this.file = dir.resolve("data.json");
+    }
+
+    /** Opens (or creates) the database in {@code dir}. A damaged file raises an {@link IllegalStateException} and is left untouched. */
+    public static LocalDatabase open(Path dir) {
+        try {
+            Files.createDirectories(dir);
+        } catch (IOException e) {
+            throw new IllegalStateException("Can't create the data folder " + dir + ": " + e.getMessage());
+        }
+        LocalDatabase db = new LocalDatabase(dir);
+        db.state = db.load();
+        if (db.state.accounts.isEmpty()) {
+            db.write(s -> {
+                User admin = new User(UUID.randomUUID(), "Administrator", DEFAULT_ADMIN_EMAIL, Role.ADMIN, true);
+                s.accounts.add(hashed(admin, DEFAULT_ADMIN_PASSWORD));
+                return null;
+            });
+        }
+        return db;
+    }
+
+    /** The folder holding data.json and the attachment files. */
+    public Path directory() { return dir; }
+
+    /** Tells the database who is signed in (used to stamp receipts and the activity log). */
+    public void bindCurrentUser(CurrentUser current) { this.who = current; }
+
+    // ---------------------------------------------------------------- accounts
+
+    /** Returns the user when email and password match (any active state); empty otherwise. */
+    public synchronized Optional<User> authenticate(String email, char[] password) {
+        String wanted = norm(email);
+        for (Account a : state.accounts) {
+            if (norm(a.user().email()).equals(wanted)) {
+                return verify(a, password) ? Optional.of(a.user()) : Optional.empty();
+            }
+        }
+        // Spend similar time for unknown emails so the answer does not reveal which emails exist.
+        hash(password, new byte[16]);
+        return Optional.empty();
+    }
+
+    /** Replaces a user's password. */
+    public synchronized void setPassword(UUID userId, String newPassword) {
+        write(s -> {
+            for (int i = 0; i < s.accounts.size(); i++) {
+                User u = s.accounts.get(i).user();
+                if (u.id().equals(userId)) s.accounts.set(i, hashed(u, newPassword));
+            }
+            return null;
+        });
+    }
+
+    /** True while the first-run administrator still has the default password. */
+    public synchronized boolean defaultAdminPasswordInUse() {
+        for (Account a : state.accounts) {
+            if (norm(a.user().email()).equals(DEFAULT_ADMIN_EMAIL) && verify(a, DEFAULT_ADMIN_PASSWORD.toCharArray())) return true;
+        }
+        return false;
+    }
+
+    private static Account hashed(User user, String password) {
+        byte[] salt = new byte[16];
+        RANDOM.nextBytes(salt);
+        return new Account(user, Base64.getEncoder().encodeToString(salt), Base64.getEncoder().encodeToString(hash(password.toCharArray(), salt)));
+    }
+
+    private static boolean verify(Account a, char[] password) {
+        byte[] expected = Base64.getDecoder().decode(a.hash());
+        byte[] actual = hash(password, Base64.getDecoder().decode(a.salt()));
+        return MessageDigest.isEqual(expected, actual);
+    }
+
+    private static byte[] hash(char[] password, byte[] salt) {
+        try {
+            return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(new PBEKeySpec(password, salt, ITERATIONS, 256)).getEncoded();
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("Password hashing is not available on this computer.", e);
+        }
+    }
+
+    // ---------------------------------------------------------------- repositories
+
+    /** User accounts. */
+    public UserRepository users() {
+        return new UserRepository() {
+            @Override public List<User> findAll() { return read(s -> s.accounts.stream().map(Account::user).toList()); }
+
+            @Override public Optional<User> findById(UUID id) {
+                return read(s -> s.accounts.stream().map(Account::user).filter(u -> u.id().equals(id)).findFirst());
+            }
+
+            @Override public User create(String email, String fullName, Role role, char[] password) {
+                return write(s -> {
+                    String e = email.trim();
+                    if (s.accounts.stream().anyMatch(a -> norm(a.user().email()).equals(norm(e)))) {
+                        throw new RepositoryException("An account with that email already exists.", false);
+                    }
+                    User u = new User(UUID.randomUUID(), fullName.trim(), e, role, true);
+                    s.accounts.add(hashed(u, new String(password)));
+                    log(s, "user.create", e);
+                    return u;
+                });
+            }
+
+            @Override public void update(UUID id, String fullName, Role role, boolean active) {
+                write(s -> {
+                    boolean found = false;
+                    for (int i = 0; i < s.accounts.size(); i++) {
+                        Account a = s.accounts.get(i);
+                        if (a.user().id().equals(id)) {
+                            s.accounts.set(i, new Account(new User(id, fullName, a.user().email(), role, active), a.salt(), a.hash()));
+                            found = true;
+                        }
+                    }
+                    if (!found) throw new RepositoryException("That user no longer exists.", false);
+                    if (s.accounts.stream().noneMatch(a -> a.user().role() == Role.ADMIN && a.user().active())) {
+                        throw new RepositoryException("You cannot remove the last active administrator.", false);
+                    }
+                    log(s, "user.update", fullName);
+                    return null;
+                });
+            }
+        };
+    }
+
+    /** Suppliers (TIN uniqueness is checked by the service; the store only assigns ids). */
+    public SupplierRepository suppliers() {
+        return new SupplierRepository() {
+            @Override public List<Supplier> findAll() { return read(s -> List.copyOf(s.suppliers)); }
+
+            @Override public Optional<Supplier> findById(UUID id) { return read(s -> s.suppliers.stream().filter(x -> x.id().equals(id)).findFirst()); }
+
+            @Override public Supplier save(Supplier v) {
+                return write(s -> {
+                    boolean isNew = v.id() == null;
+                    Supplier stored = new Supplier(isNew ? UUID.randomUUID() : v.id(), v.businessName(), v.tin(), v.address(), v.contactNumber());
+                    s.suppliers.removeIf(x -> x.id().equals(stored.id()));
+                    s.suppliers.add(stored);
+                    log(s, isNew ? "suppliers.insert" : "suppliers.update", stored.businessName());
+                    return stored;
+                });
+            }
+
+            @Override public void delete(UUID id) {
+                write(s -> {
+                    if (s.receipts.stream().anyMatch(r -> r.supplierId().equals(id))) {
+                        throw new RepositoryException("Cannot delete: receipts still use this supplier.", false);
+                    }
+                    s.suppliers.removeIf(x -> x.id().equals(id));
+                    log(s, "suppliers.delete", id.toString());
+                    return null;
+                });
+            }
+        };
+    }
+
+    /** Projects. */
+    public ProjectRepository projects() {
+        return new ProjectRepository() {
+            @Override public List<Project> findAll() { return read(s -> List.copyOf(s.projects)); }
+
+            @Override public Optional<Project> findById(UUID id) { return read(s -> s.projects.stream().filter(x -> x.id().equals(id)).findFirst()); }
+
+            @Override public Project save(Project v) {
+                return write(s -> {
+                    boolean isNew = v.id() == null;
+                    Project stored = new Project(isNew ? UUID.randomUUID() : v.id(), v.name(), v.code(), v.fundSource());
+                    s.projects.removeIf(x -> x.id().equals(stored.id()));
+                    s.projects.add(stored);
+                    log(s, isNew ? "projects.insert" : "projects.update", stored.name());
+                    return stored;
+                });
+            }
+
+            @Override public void delete(UUID id) {
+                write(s -> {
+                    if (s.receipts.stream().anyMatch(r -> id.equals(r.projectId()))) {
+                        throw new RepositoryException("Cannot delete: receipts still use this project.", false);
+                    }
+                    s.projects.removeIf(x -> x.id().equals(id));
+                    log(s, "projects.delete", id.toString());
+                    return null;
+                });
+            }
+        };
+    }
+
+    /** Receipts with their items and attachment records. */
+    public ReceiptRepository receipts() {
+        return new ReceiptRepository() {
+            @Override public List<Receipt> findAll() {
+                return read(s -> s.receipts.stream().sorted(Comparator.comparing(Receipt::date).reversed()
+                        .thenComparing(Receipt::receiptNo)).toList());
+            }
+
+            @Override public Optional<Receipt> findById(UUID id) { return read(s -> s.receipts.stream().filter(r -> r.id().equals(id)).findFirst()); }
+
+            @Override public Receipt save(Receipt r) {
+                return write(s -> {
+                    UUID id = r.id() == null ? UUID.randomUUID() : r.id();
+                    for (Receipt other : s.receipts) {
+                        if (!other.id().equals(id) && other.supplierId().equals(r.supplierId())
+                                && norm(other.receiptNo()).equals(norm(r.receiptNo()))) {
+                            throw new ValidationException("Duplicate receipt: " + r.receiptNo().trim() + " already exists for this supplier.");
+                        }
+                    }
+                    Optional<Receipt> previous = s.receipts.stream().filter(x -> x.id().equals(id)).findFirst();
+                    Instant now = Instant.now();
+                    User me = who.get();
+                    Receipt stored = new Receipt(id, r.receiptNo().trim(), r.date(), r.type(), r.supplierId(), r.projectId(), r.items(),
+                            r.discount(), r.vat(), r.additionalCharges(), r.attachments(),
+                            previous.map(Receipt::encodedBy).orElse(me == null ? null : me.id()),
+                            previous.map(Receipt::createdAt).orElse(now), now);
+                    s.receipts.removeIf(x -> x.id().equals(id));
+                    s.receipts.add(stored);
+                    log(s, previous.isPresent() ? "receipt.update" : "receipt.create", stored.receiptNo());
+                    return stored;
+                });
+            }
+
+            @Override public List<String> delete(UUID id) {
+                return write(s -> {
+                    Optional<Receipt> found = s.receipts.stream().filter(x -> x.id().equals(id)).findFirst();
+                    if (found.isEmpty()) return List.of();
+                    s.receipts.removeIf(x -> x.id().equals(id));
+                    log(s, "receipt.delete", found.get().receiptNo());
+                    return found.get().attachments().stream().map(Attachment::storagePath).toList();
+                });
+            }
+        };
+    }
+
+    /** The activity log, newest first. */
+    public ActivityLogRepository activityLog() {
+        return () -> read(s -> s.activity.stream().sorted(Comparator.comparing(ActivityEntry::at).reversed()).toList());
+    }
+
+    private void log(State s, String action, String detail) {
+        User me = who.get();
+        s.activity.add(new ActivityEntry(Instant.now(), me == null ? null : me.id(), me == null ? "" : me.fullName(), action, detail));
+    }
+
+    // ---------------------------------------------------------------- storage
+
+    private synchronized <T> T read(Function<State, T> f) { return f.apply(state); }
+
+    /** Applies a change, saves it, and on any failure puts the in-memory data back to what is on disk. */
+    private synchronized <T> T write(Function<State, T> change) {
+        try {
+            T result = change.apply(state);
+            save();
+            return result;
+        } catch (RuntimeException e) {
+            state = load();
+            throw e;
+        }
+    }
+
+    private State load() {
+        State s = new State();
+        if (!Files.exists(file)) return s;
+        try {
+            JsonNode root = SupabaseHttp.JSON.readTree(Files.readAllBytes(file));
+            if (root == null || !root.isObject()) throw new IOException("not a data file");
+            for (JsonNode n : root.path("users")) {
+                s.accounts.add(new Account(new User(UUID.fromString(n.path("id").asText()), n.path("fullName").asText(), n.path("email").asText(),
+                        Role.fromDb(n.path("role").asText()), n.path("active").asBoolean(true)), n.path("salt").asText(), n.path("hash").asText()));
+            }
+            for (JsonNode n : root.path("suppliers")) {
+                s.suppliers.add(new Supplier(UUID.fromString(n.path("id").asText()), n.path("businessName").asText(), n.path("tin").asText(),
+                        n.path("address").asText(), n.path("contactNumber").asText()));
+            }
+            for (JsonNode n : root.path("projects")) {
+                s.projects.add(new Project(UUID.fromString(n.path("id").asText()), n.path("name").asText(), n.path("code").asText(), n.path("fundSource").asText()));
+            }
+            for (JsonNode n : root.path("receipts")) s.receipts.add(readReceipt(n));
+            for (JsonNode n : root.path("activity")) {
+                s.activity.add(new ActivityEntry(Instant.parse(n.path("at").asText()), uuidOrNull(n.path("userId")), n.path("userName").asText(),
+                        n.path("action").asText(), n.path("detail").asText()));
+            }
+            return s;
+        } catch (IOException | RuntimeException e) {
+            throw new IllegalStateException("The data file " + file + " is damaged (" + e.getMessage() + "). It was left untouched. "
+                    + "Restore data.json.bak from the same folder, or move the file away to start fresh.");
+        }
+    }
+
+    private static UUID uuidOrNull(JsonNode n) { return n.isMissingNode() || n.isNull() || n.asText().isBlank() ? null : UUID.fromString(n.asText()); }
+
+    private static Receipt readReceipt(JsonNode n) {
+        List<ReceiptItem> items = new ArrayList<>();
+        for (JsonNode i : n.path("items")) {
+            items.add(new ReceiptItem(i.path("description").asText(), new BigDecimal(i.path("quantity").asText()), new BigDecimal(i.path("unitPrice").asText())));
+        }
+        List<Attachment> atts = new ArrayList<>();
+        for (JsonNode a : n.path("attachments")) atts.add(new Attachment(a.path("fileName").asText(), a.path("storagePath").asText()));
+        return new Receipt(UUID.fromString(n.path("id").asText()), n.path("receiptNo").asText(), LocalDate.parse(n.path("date").asText()),
+                ReceiptType.fromDb(n.path("type").asText()), UUID.fromString(n.path("supplierId").asText()), uuidOrNull(n.path("projectId")), items,
+                new BigDecimal(n.path("discount").asText("0")), new BigDecimal(n.path("vat").asText("0")), new BigDecimal(n.path("additionalCharges").asText("0")),
+                atts, uuidOrNull(n.path("encodedBy")), Instant.parse(n.path("createdAt").asText()), Instant.parse(n.path("modifiedAt").asText()));
+    }
+
+    private void save() {
+        ObjectNode root = SupabaseHttp.JSON.createObjectNode();
+        root.put("version", 1);
+        ArrayNode users = root.putArray("users");
+        for (Account a : state.accounts) {
+            User u = a.user();
+            users.addObject().put("id", u.id().toString()).put("fullName", u.fullName()).put("email", u.email())
+                    .put("role", u.role().dbValue()).put("active", u.active()).put("salt", a.salt()).put("hash", a.hash());
+        }
+        ArrayNode suppliers = root.putArray("suppliers");
+        for (Supplier s : state.suppliers) {
+            suppliers.addObject().put("id", s.id().toString()).put("businessName", s.businessName()).put("tin", s.tin())
+                    .put("address", s.address()).put("contactNumber", s.contactNumber());
+        }
+        ArrayNode projects = root.putArray("projects");
+        for (Project p : state.projects) {
+            projects.addObject().put("id", p.id().toString()).put("name", p.name()).put("code", p.code()).put("fundSource", p.fundSource());
+        }
+        ArrayNode receipts = root.putArray("receipts");
+        for (Receipt r : state.receipts) {
+            ObjectNode n = receipts.addObject();
+            n.put("id", r.id().toString()).put("receiptNo", r.receiptNo()).put("date", r.date().toString()).put("type", r.type().dbValue())
+                    .put("supplierId", r.supplierId().toString());
+            if (r.projectId() != null) n.put("projectId", r.projectId().toString());
+            ArrayNode items = n.putArray("items");
+            for (ReceiptItem i : r.items()) {
+                items.addObject().put("description", i.description()).put("quantity", i.quantity().toPlainString()).put("unitPrice", i.unitPrice().toPlainString());
+            }
+            n.put("discount", r.discount().toPlainString()).put("vat", r.vat().toPlainString()).put("additionalCharges", r.additionalCharges().toPlainString());
+            ArrayNode atts = n.putArray("attachments");
+            for (Attachment a : r.attachments()) atts.addObject().put("fileName", a.fileName()).put("storagePath", a.storagePath());
+            if (r.encodedBy() != null) n.put("encodedBy", r.encodedBy().toString());
+            n.put("createdAt", r.createdAt().toString()).put("modifiedAt", r.modifiedAt().toString());
+        }
+        ArrayNode activity = root.putArray("activity");
+        for (ActivityEntry a : state.activity) {
+            ObjectNode n = activity.addObject();
+            n.put("at", a.at().toString());
+            if (a.userId() != null) n.put("userId", a.userId().toString());
+            n.put("userName", a.userName()).put("action", a.action()).put("detail", a.detail());
+        }
+        try {
+            byte[] bytes = SupabaseHttp.JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root).getBytes(StandardCharsets.UTF_8);
+            Path tmp = dir.resolve("data.json.tmp");
+            Files.write(tmp, bytes);
+            if (Files.exists(file)) Files.copy(file, dir.resolve("data.json.bak"), StandardCopyOption.REPLACE_EXISTING);
+            try {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            throw new RepositoryException("Could not save your data to " + file + ": " + e.getMessage(), false);
+        }
+    }
+
+    private static String norm(String s) { return s == null ? "" : s.trim().toLowerCase(Locale.ROOT); }
+}
