@@ -18,6 +18,7 @@ import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.border.AbstractBorder;
 import java.awt.BorderLayout;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
@@ -76,7 +77,6 @@ public final class LoginPanel extends JLayeredPane {
         card = new RoundedCardPanel();
         card.setLayout(new GridLayout(1, 2));
         card.setOpaque(false);
-        card.setBorder(new RoundedCardBorder(RmsColors.border(), 26));
         card.setPreferredSize(new Dimension(860, 520));
 
         JPanel brand = buildBrandPanel();
@@ -147,7 +147,8 @@ public final class LoginPanel extends JLayeredPane {
         JPanel top = new JPanel(new BorderLayout());
         top.setOpaque(false);
         themeButton.putClientProperty("JButton.buttonType", "roundRect");
-        themeButton.setContentAreaFilled(true);
+        themeButton.setContentAreaFilled(false);
+        themeButton.setOpaque(false);
         themeButton.setBorderPainted(true);
         themeButton.setFocusPainted(false);
         themeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -244,6 +245,8 @@ public final class LoginPanel extends JLayeredPane {
 
     private static void styleActionButton(JButton button) {
         button.putClientProperty("JButton.buttonType", "roundRect");
+        button.setContentAreaFilled(false);
+        button.setOpaque(false);
         button.setPreferredSize(new Dimension(150, 48));
         button.setMinimumSize(new Dimension(120, 48));
         button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -329,7 +332,7 @@ public final class LoginPanel extends JLayeredPane {
     private void applyTheme() {
         boolean dark = ThemeManager.isDark();
         setBackground(RmsColors.background());
-        card.setBorder(new RoundedCardBorder(RmsColors.border(), 26));
+        card.setDark(dark);
         if (brandPanel != null) brandPanel.setFill(RmsColors.PRIMARY);
         if (formPanel != null) formPanel.setFill(RmsColors.surface());
         background.updateTheme(dark);
@@ -450,13 +453,13 @@ public final class LoginPanel extends JLayeredPane {
 
         @Override
         public Insets getBorderInsets(Component component, Insets insets) {
-            insets.set(1, 1, 1, 1);
+            insets.set(0, 0, 0, 0);
             return insets;
         }
 
         @Override
         public Insets getBorderInsets(Component component) {
-            return new Insets(1, 1, 1, 1);
+            return new Insets(0, 0, 0, 0);
         }
 
         @Override
@@ -469,40 +472,10 @@ public final class LoginPanel extends JLayeredPane {
         }
     }
 
-    private static final class RoundedCardBorder extends AbstractBorder {
-        private final Color color;
-        private final int radius;
-
-        private RoundedCardBorder(Color color, int radius) {
-            this.color = color;
-            this.radius = radius;
-        }
-
-        @Override
-        public Insets getBorderInsets(Component component, Insets insets) {
-            insets.set(1, 1, 1, 1);
-            return insets;
-        }
-
-        @Override
-        public Insets getBorderInsets(Component component) {
-            return new Insets(1, 1, 1, 1);
-        }
-
-        @Override
-        public void paintBorder(Component component, Graphics graphics, int x, int y, int width, int height) {
-            Graphics2D g = (Graphics2D) graphics.create();
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g.setColor(color);
-            g.draw(new RoundRectangle2D.Float(x, y, width - 1, height - 1, radius, radius));
-            g.dispose();
-        }
-    }
-
     private static final class RoundedSidePanel extends JPanel {
         private final boolean leftSide;
         private Color fill = RmsColors.surface();
-        private final int radius = 26;
+        private final int radius = 22;
 
         private RoundedSidePanel(boolean leftSide) {
             this.leftSide = leftSide;
@@ -533,16 +506,24 @@ public final class LoginPanel extends JLayeredPane {
     }
 
     private static class RoundedButton extends JButton {
-        private RoundedButton() { }
+        private RoundedButton() {
+            setContentAreaFilled(false);
+            setOpaque(false);
+        }
 
         private RoundedButton(String text) {
             super(text);
+            setContentAreaFilled(false);
+            setOpaque(false);
         }
 
         @Override
         protected void paintComponent(Graphics graphics) {
             Graphics2D g = (Graphics2D) graphics.create();
             Shape shape = new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 16, 16);
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(getBackground());
+            g.fill(shape);
             g.clip(shape);
             super.paintComponent(g);
             g.dispose();
@@ -550,40 +531,77 @@ public final class LoginPanel extends JLayeredPane {
     }
 
     private static class RoundedLoginTextField extends JTextField {
+        private RoundedLoginTextField() {
+            setOpaque(false);
+        }
+
         @Override
         protected void paintComponent(Graphics graphics) {
             Graphics2D g = (Graphics2D) graphics.create();
-            g.clip(new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 16, 16));
+            RoundRectangle2D shape = new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 16, 16);
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(getBackground());
+            g.fill(shape);
+            g.clip(shape);
             super.paintComponent(g);
             g.dispose();
         }
     }
 
     private static class RoundedLoginPasswordField extends JPasswordField {
+        private RoundedLoginPasswordField() {
+            setOpaque(false);
+        }
+
         @Override
         protected void paintComponent(Graphics graphics) {
             Graphics2D g = (Graphics2D) graphics.create();
-            g.clip(new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 16, 16));
+            RoundRectangle2D shape = new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 16, 16);
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(getBackground());
+            g.fill(shape);
+            g.clip(shape);
             super.paintComponent(g);
             g.dispose();
         }
     }
 
     private static final class RoundedCardPanel extends JPanel {
-        private final int radius = 26;
+        private final int radius = 22;
+        private boolean dark;
+
+        private void setDark(boolean dark) {
+            this.dark = dark;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int width = getWidth();
+            int height = getHeight();
+            g.setColor(new Color(0, 0, 0, dark ? 110 : 40));
+            g.fillRoundRect(3, 8, width - 6, height - 6, radius, radius);
+            g.setColor(dark ? new Color(15, 23, 42, 238) : new Color(255, 255, 255, 245));
+            g.fillRoundRect(0, 0, width - 2, height - 2, radius, radius);
+            g.dispose();
+        }
 
         @Override
         protected void paintChildren(Graphics graphics) {
             Graphics2D g = (Graphics2D) graphics.create();
-            g.clip(new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), radius, radius));
             super.paintChildren(g);
+            int height = getHeight();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setPaint(new java.awt.GradientPaint(0, 0,
+                    new Color(255, 255, 255, dark ? 65 : 180),
+                    0, height, new Color(255, 255, 255, dark ? 15 : 40)));
+            g.setStroke(new BasicStroke(1.2f));
+            g.drawRoundRect(0, 0, getWidth() - 3, height - 3, radius, radius);
             g.dispose();
-
-            if (getBorder() != null) {
-                Graphics2D borderGraphics = (Graphics2D) graphics.create();
-                getBorder().paintBorder(this, borderGraphics, 0, 0, getWidth(), getHeight());
-                borderGraphics.dispose();
-            }
         }
     }
 }

@@ -72,6 +72,9 @@ public final class ReceiptDirectoryPanel extends JPanel implements RefreshablePa
         add.setBackground(RmsColors.PRIMARY);
         add.setForeground(java.awt.Color.WHITE);
         add.addActionListener(e -> onAdd.run());
+        JButton refresh = new JButton("Refresh");
+        refresh.setToolTipText("Load the latest receipts from the shared database");
+        refresh.addActionListener(e -> refreshData());
         JButton clear = new JButton("Clear filters");
         clear.addActionListener(e -> {
             search.setText("");
@@ -87,7 +90,11 @@ public final class ReceiptDirectoryPanel extends JPanel implements RefreshablePa
         JPanel row1 = new JPanel(new BorderLayout(10, 0));
         row1.setOpaque(false);
         row1.add(search, BorderLayout.CENTER);
-        row1.add(add, BorderLayout.EAST);
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        actions.setOpaque(false);
+        actions.add(refresh);
+        actions.add(add);
+        row1.add(actions, BorderLayout.EAST);
         JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         row2.setOpaque(false);
         row2.add(new JLabel("From"));

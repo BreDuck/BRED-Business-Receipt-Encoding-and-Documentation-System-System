@@ -51,7 +51,10 @@ mvn -q exec:java                  # run from source
 mvn -q package                    # or build a single jar…
 java -jar target/rms-0.1.0-SNAPSHOT.jar
 ```
-Copy the jar and `application.properties` to the other computers; they sign in to the same project and share the data.
+Copy the jar and the same `application.properties` (project URL and public anon/publishable key) to the other computers.
+Create a separate Supabase Auth account for each employee. After sign-in, the app header should show **Shared cloud**;
+if it says **Local only**, that computer is not connected to the shared project and its receipts will not appear for coworkers.
+In the Receipts directory, use **Refresh** to load records added by other users while the screen is open.
 
 ## First live run checklist
 This app was built and tested without access to a live Supabase project (unit tests, a fake server and a throwaway PostgreSQL were used). Please walk through this once on your real project:

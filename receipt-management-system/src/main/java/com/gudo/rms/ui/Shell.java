@@ -28,11 +28,20 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JToggleButton;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import java.awt.BorderLayout;
+import java.awt.BasicStroke;
 import java.awt.CardLayout;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Insets;
+import java.awt.RenderingHints;
+import java.awt.geom.RoundRectangle2D;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +56,7 @@ public final class Shell extends JPanel {
     private final Map<Module, JToggleButton> navButtons = new EnumMap<>(Module.class);
     private final JLabel title = new JLabel();
     private static final String DETAIL_CARD = "RECEIPT_DETAIL";
+    private NavListPanel navList;
     private ReceiptDirectoryPanel directory;
     private ReceiptDetailPanel detail;
 
@@ -82,7 +92,10 @@ public final class Shell extends JPanel {
         cards.show(content, m.name());
         title.setText(m.title());
         JToggleButton b = navButtons.get(m);
-        if (b != null) b.setSelected(true);
+        if (b != null) {
+            b.setSelected(true);
+            navList.select(modules.indexOf(m));
+        }
     }
 
     /** Creates the screen for a module. */
@@ -112,7 +125,10 @@ public final class Shell extends JPanel {
         cards.show(content, DETAIL_CARD);
         title.setText("Receipt");
         JToggleButton b = navButtons.get(Module.RECEIPTS);
-        if (b != null) b.setSelected(true);
+        if (b != null) {
+            b.setSelected(true);
+            navList.select(modules.indexOf(Module.RECEIPTS));
+        }
     }
 
     private void backToDirectory() {
@@ -129,36 +145,152 @@ public final class Shell extends JPanel {
     }
 
     private JComponent buildSidebar() {
-        SurfacePanel side = new SurfacePanel(null, RmsColors::surface);
+        SurfacePanel side = new SurfacePanel(null, RmsColors::surface) {
+            @Override
+            protected void paintComponent(Graphics graphics) {
+                super.paintComponent(graphics);
+                Graphics2D g = (Graphics2D) graphics.create();
+                g.setColor(RmsColors.border());
+                g.drawLine(getWidth() - 1, 0, getWidth() - 1, getHeight());
+                g.dispose();
+            }
+        };
         side.setLayout(new BoxLayout(side, BoxLayout.Y_AXIS));
-        side.setBorder(BorderFactory.createEmptyBorder(16, 12, 16, 12));
-        side.setPreferredSize(new Dimension(210, 0));
-        JLabel brand = new JLabel("Receipts");
-        brand.setFont(brand.getFont().deriveFont(Font.BOLD, 20f));
+        side.setBorder(BorderFactory.createEmptyBorder(24, 18, 18, 18));
+        side.setPreferredSize(new Dimension(252, 0));
+        JLabel brand = new JLabel("RMS");
+        brand.setFont(brand.getFont().deriveFont(Font.BOLD, 24f));
         brand.setForeground(RmsColors.PRIMARY);
-        JLabel sub = new JLabel("Management System");
+        JLabel sub = new JLabel("Receipt Management");
         sub.setForeground(RmsColors.SECONDARY_TEXT);
         brand.setAlignmentX(LEFT_ALIGNMENT);
         sub.setAlignmentX(LEFT_ALIGNMENT);
         side.add(brand);
         side.add(sub);
-        side.add(Box.createVerticalStrut(18));
+        side.add(Box.createVerticalStrut(30));
+
+        JLabel section = new JLabel("WORKSPACE");
+        section.setFont(section.getFont().deriveFont(Font.BOLD, 10f));
+        section.setForeground(RmsColors.SECONDARY_TEXT);
+        section.setAlignmentX(LEFT_ALIGNMENT);
+        side.add(section);
+        side.add(Box.createVerticalStrut(10));
+
         ButtonGroup group = new ButtonGroup();
+        navList = new NavListPanel();
+        navList.setPreferredSize(new Dimension(216, modules.size() * 56));
+        navList.setMaximumSize(new Dimension(Integer.MAX_VALUE, modules.size() * 56));
         for (Module m : modules) {
-            JToggleButton b = new JToggleButton(m.title());
-            b.putClientProperty("JButton.buttonType", "toolBar");
+            JToggleButton b = new NavButton(m.title());
             b.setHorizontalAlignment(JToggleButton.LEFT);
-            b.setAlignmentX(LEFT_ALIGNMENT);
-            b.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
+            b.setMargin(new Insets(0, 16, 0, 12));
             b.setFocusable(false);
             b.addActionListener(e -> show(m));
             group.add(b);
             navButtons.put(m, b);
-            side.add(b);
-            side.add(Box.createVerticalStrut(2));
+            navList.addButton(b);
         }
+        navList.setAlignmentX(LEFT_ALIGNMENT);
+        side.add(navList);
         side.add(Box.createVerticalGlue());
         return side;
+    }
+
+    private static final class NavButton extends JToggleButton {
+        private NavButton(String text) {
+            super(text);
+            setContentAreaFilled(false);
+            setOpaque(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            if (getModel().isRollover() && !isSelected()) {
+                RoundRectangle2D shape = new RoundRectangle2D.Float(1, 1, getWidth() - 3, getHeight() - 3, 14, 14);
+                g.setColor(ThemeManager.isDark()
+                        ? new Color(255, 255, 255, 12)
+                        : new Color(RmsColors.PRIMARY.getRed(), RmsColors.PRIMARY.getGreen(), RmsColors.PRIMARY.getBlue(), 14));
+                g.fill(shape);
+            }
+            setForeground(isSelected() && !ThemeManager.isDark() ? RmsColors.PRIMARY_DARK : RmsColors.text());
+            super.paintComponent(g);
+            g.dispose();
+        }
+    }
+
+    private static final class NavListPanel extends JPanel {
+        private static final int ROW_HEIGHT = 50;
+        private static final int ROW_GAP = 6;
+        private static final int ARC = 14;
+        private final List<JToggleButton> buttons = new ArrayList<>();
+        private final Timer animation;
+        private double y = -1;
+        private double targetY = -1;
+
+        private NavListPanel() {
+            setLayout(null);
+            setOpaque(false);
+            animation = new Timer(16, null);
+            animation.addActionListener(event -> {
+                y += (targetY - y) * 0.24;
+                if (Math.abs(targetY - y) < 0.6) {
+                    y = targetY;
+                    animation.stop();
+                }
+                repaint();
+            });
+        }
+
+        private void addButton(JToggleButton button) {
+            buttons.add(button);
+            add(button);
+        }
+
+        private void select(int index) {
+            if (index < 0 || index >= buttons.size()) return;
+            targetY = index * (ROW_HEIGHT + ROW_GAP);
+            if (y < 0) {
+                y = targetY;
+                repaint();
+            } else if (Math.abs(targetY - y) > 0.6) {
+                animation.start();
+            }
+        }
+
+        @Override
+        public void doLayout() {
+            for (int i = 0; i < buttons.size(); i++) {
+                buttons.get(i).setBounds(0, i * (ROW_HEIGHT + ROW_GAP), getWidth(), ROW_HEIGHT);
+            }
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            if (y < 0 || getWidth() <= 2) return;
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            RoundRectangle2D outline = new RoundRectangle2D.Float(1, (float) y + 1,
+                    getWidth() - 3, ROW_HEIGHT - 3, ARC, ARC);
+            g.setColor(ThemeManager.isDark()
+                    ? new Color(RmsColors.PRIMARY.getRed(), RmsColors.PRIMARY.getGreen(), RmsColors.PRIMARY.getBlue(), 38)
+                    : RmsColors.PRIMARY_LIGHT);
+            g.fill(outline);
+            g.setColor(RmsColors.PRIMARY);
+            g.setStroke(new BasicStroke(1.2f));
+            g.draw(outline);
+            g.dispose();
+        }
+
+        @Override
+        public void removeNotify() {
+            animation.stop();
+            super.removeNotify();
+        }
     }
 
     private JComponent buildHeader(User user, Runnable onSignOut) {
@@ -169,6 +301,13 @@ public final class Shell extends JPanel {
 
         JPanel tools = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         tools.setOpaque(false);
+        boolean sharedCloud = ctx.storageLabel.startsWith("Supabase project ");
+        StatusBadge storage = StatusBadge.of(sharedCloud ? "Shared cloud" : "Local only",
+                sharedCloud ? RmsColors.SUCCESS : RmsColors.WARNING);
+        storage.setToolTipText(sharedCloud
+                ? "Receipts are stored in the shared Supabase project."
+                : "Receipts are stored only on this computer.");
+        tools.add(storage);
         if (user != null) {
             tools.add(new JLabel(user.fullName()));
             tools.add(StatusBadge.of(user.role().label(), user.role() == Role.ADMIN ? RmsColors.PRIMARY : RmsColors.INFO));

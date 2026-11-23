@@ -6,7 +6,6 @@ import com.gudo.rms.models.ReceiptMath;
 import com.gudo.rms.models.Supplier;
 import com.gudo.rms.services.ReportService;
 import com.gudo.rms.ui.components.StatCard;
-import com.gudo.rms.ui.components.SurfacePanel;
 import com.gudo.rms.ui.theme.RmsColors;
 import com.gudo.rms.utils.BackgroundTask;
 
@@ -56,10 +55,7 @@ public final class DashboardPanel extends JPanel implements RefreshablePanel {
         JPanel cards = new JPanel(new GridLayout(1, 4, 12, 0));
         cards.setOpaque(false);
         for (StatCard c : List.of(monthCount, monthSpend, totalCount, projectCount)) {
-            SurfacePanel wrap = new SurfacePanel(null, RmsColors::surface);
-            wrap.setLayout(new BorderLayout());
-            wrap.add(c, BorderLayout.CENTER);
-            cards.add(wrap);
+            cards.add(c);
         }
         add(cards, BorderLayout.NORTH);
 

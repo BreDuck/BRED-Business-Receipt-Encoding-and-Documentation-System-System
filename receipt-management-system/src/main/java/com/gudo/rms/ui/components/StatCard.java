@@ -3,15 +3,16 @@ package com.gudo.rms.ui.components;
 import com.gudo.rms.ui.theme.RmsColors;
 
 import javax.swing.BorderFactory;
-import javax.swing.BoxLayout;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import java.awt.BorderLayout;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.geom.RoundRectangle2D;
 
 /** Summary card: small title, large value, colored accent edge. */
 public final class StatCard extends JPanel {
@@ -46,15 +47,17 @@ public final class StatCard extends JPanel {
 
     /** Paints component. */
     @Override protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
         Graphics2D g2 = (Graphics2D) g.create();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        RoundRectangle2D card = new RoundRectangle2D.Float(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
         g2.setColor(RmsColors.surface());
-        g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
-        g2.setColor(RmsColors.border());
-        g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+        g2.fill(card);
         g2.setColor(accent);
-        g2.fillRoundRect(0, 10, 5, getHeight() - 20, 5, 5);
+        g2.fillRoundRect(1, 10, 4, getHeight() - 20, 4, 4);
+        g2.setColor(RmsColors.border());
+        g2.setStroke(new BasicStroke(1f));
+        g2.draw(card);
         g2.dispose();
-        super.paintComponent(g);
     }
 }
