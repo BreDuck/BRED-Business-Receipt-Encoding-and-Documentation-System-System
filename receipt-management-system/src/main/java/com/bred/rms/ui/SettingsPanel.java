@@ -4,6 +4,7 @@ import com.bred.rms.config.AppContext;
 import com.bred.rms.models.BugReport;
 import com.bred.rms.models.Role;
 import com.bred.rms.models.User;
+import com.bred.rms.ui.components.UserAvatar;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.theme.ThemeManager;
 import com.bred.rms.utils.BackgroundTask;
@@ -34,9 +35,10 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.awt.RenderingHints;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.awt.Shape;
 import java.awt.geom.RoundRectangle2D;
 import javax.swing.border.AbstractBorder;
@@ -45,7 +47,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import javax.swing.Timer;
 
 /** Account details, appearance options and "change my password". */
 public final class SettingsPanel extends JPanel {
@@ -73,7 +74,7 @@ public final class SettingsPanel extends JPanel {
         add(heading("Account"));
         add(line(u == null ? "Not signed in" : u.fullName() + " · " + u.email() + " · " + u.role().label()));
         if (u != null && !u.companyName().isBlank()) add(line("Company: " + u.companyName()));
-        add(line("Data stored in: " + ctx.storageLabel));
+        add(line("Data stored in: cloud database (Supabase)"));
         if (ctx.localDataImporter != null && u != null && u.role().canManageCompany()) {
             add(Box.createVerticalStrut(12));
             add(heading("Move existing local data to Supabase"));
@@ -129,17 +130,26 @@ public final class SettingsPanel extends JPanel {
                 BorderFactory.createMatteBorder(1, 0, 0, 0, RmsColors.border()),
                 BorderFactory.createEmptyBorder(16, 0, 0, 0)));
 
-        JPanel heading = new JPanel(new BorderLayout(12, 0));
-        heading.setOpaque(false);
-        heading.add(new CreatorAvatar(), BorderLayout.WEST);
+        JPanel contactColumn = new JPanel();
+        contactColumn.setOpaque(false);
+        contactColumn.setLayout(new BoxLayout(contactColumn, BoxLayout.Y_AXIS));
+        contactColumn.add(heading("Contacts"));
+        contactColumn.add(Box.createVerticalStrut(12));
+
+        JPanel creatorContact = new JPanel(new BorderLayout(12, 0));
+        creatorContact.setOpaque(false);
+        creatorContact.setAlignmentX(LEFT_ALIGNMENT);
+        UserAvatar creatorAvatar = new UserAvatar(76, 54, true);
+        creatorAvatar.setProfile("Clark Hilario", "clarkhilario.bread@gmail.com");
+        creatorContact.add(creatorAvatar, BorderLayout.WEST);
         JPanel contactCopy = new JPanel();
         contactCopy.setOpaque(false);
         contactCopy.setLayout(new BoxLayout(contactCopy, BoxLayout.Y_AXIS));
-        contactCopy.add(heading("Contacts"));
         contactCopy.add(line("Creator: Clark Hilario"));
         contactCopy.add(line("Email: clarkhilario.bread@gmail.com"));
         contactCopy.add(line("Phone: +639944826590"));
-        heading.add(contactCopy, BorderLayout.CENTER);
+        creatorContact.add(contactCopy, BorderLayout.CENTER);
+        contactColumn.add(creatorContact);
 
         JPanel reportForm = new RoundedReportCard();
         reportForm.setLayout(new BoxLayout(reportForm, BoxLayout.Y_AXIS));
@@ -224,15 +234,15 @@ public final class SettingsPanel extends JPanel {
             chooseImage.setEnabled(false);
         }
 
-        JPanel body = new JPanel();
-        body.setOpaque(false);
-        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-        body.add(heading);
-        body.add(Box.createVerticalStrut(12));
-        body.add(reportForm);
+        JPanel reportColumn = new JPanel();
+        reportColumn.setOpaque(false);
+        reportColumn.setLayout(new BoxLayout(reportColumn, BoxLayout.Y_AXIS));
+        reportColumn.add(reportForm);
         if (user != null && user.role() == Role.CREATOR && ctx.bugReports != null) {
-            body.add(Box.createVerticalStrut(18));
-            body.add(heading("Submitted reports"));
+            reportColumn.add(Box.createVerticalStrut(18));
+            JLabel submittedHeading = heading("Submitted reports");
+            submittedHeading.setAlignmentX(LEFT_ALIGNMENT);
+            reportColumn.add(submittedHeading);
             reportList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             reportList.setVisibleRowCount(5);
             reportList.setCellRenderer(new DefaultListCellRenderer() {
@@ -256,11 +266,37 @@ public final class SettingsPanel extends JPanel {
             reportDetails.setWrapStyleWord(true);
             viewImage.setEnabled(false);
             viewImage.addActionListener(e -> showReportImage(ctx));
-            body.add(new JScrollPane(reportList));
-            body.add(new JScrollPane(reportDetails));
-            body.add(viewImage);
+            JScrollPane reportsScroll = new JScrollPane(reportList);
+            reportsScroll.setAlignmentX(LEFT_ALIGNMENT);
+            reportColumn.add(reportsScroll);
+            JScrollPane detailsScroll = new JScrollPane(reportDetails);
+            detailsScroll.setAlignmentX(LEFT_ALIGNMENT);
+            reportColumn.add(detailsScroll);
+            viewImage.setAlignmentX(LEFT_ALIGNMENT);
+            reportColumn.add(viewImage);
             loadReports(ctx);
         }
+
+        JPanel body = new JPanel(new GridBagLayout());
+        body.setOpaque(false);
+        GridBagConstraints reportConstraints = new GridBagConstraints();
+        reportConstraints.gridx = 0;
+        reportConstraints.gridy = 0;
+        reportConstraints.weightx = 0.72;
+        reportConstraints.weighty = 1;
+        reportConstraints.fill = GridBagConstraints.BOTH;
+        reportConstraints.anchor = GridBagConstraints.NORTHWEST;
+        reportConstraints.insets = new Insets(0, 0, 0, 16);
+        body.add(reportColumn, reportConstraints);
+
+        GridBagConstraints contactConstraints = new GridBagConstraints();
+        contactConstraints.gridx = 1;
+        contactConstraints.gridy = 0;
+        contactConstraints.weightx = 0.28;
+        contactConstraints.weighty = 1;
+        contactConstraints.fill = GridBagConstraints.HORIZONTAL;
+        contactConstraints.anchor = GridBagConstraints.NORTHWEST;
+        body.add(contactColumn, contactConstraints);
         contacts.add(body, BorderLayout.CENTER);
         add(contacts);
     }
@@ -554,68 +590,4 @@ public final class SettingsPanel extends JPanel {
         }
     }
 
-    private static final class CreatorAvatar extends JPanel {
-        private final java.awt.image.BufferedImage image;
-        private final Timer animation;
-        private float hover;
-        private float target;
-
-        private CreatorAvatar() {
-            setOpaque(false);
-            setPreferredSize(new Dimension(76, 76));
-            java.awt.image.BufferedImage loaded = null;
-            try {
-                var resource = SettingsPanel.class.getResource("/com/bred/rms/ui/logo/breducklogo.png");
-                if (resource != null) loaded = ImageIO.read(resource);
-            } catch (IOException e) {
-                throw new IllegalStateException("Could not load the Creator profile image.", e);
-            }
-            image = loaded;
-            animation = new Timer(16, event -> {
-                hover += (target - hover) * 0.28f;
-                if (Math.abs(target - hover) < 0.015f) {
-                    hover = target;
-                    ((Timer) event.getSource()).stop();
-                }
-                repaint();
-            });
-            addMouseListener(new MouseAdapter() {
-                @Override public void mouseEntered(MouseEvent e) { target = 1; animation.start(); }
-                @Override public void mouseExited(MouseEvent e) { target = 0; animation.start(); }
-            });
-            setToolTipText("Creator profile");
-        }
-
-        @Override protected void paintComponent(Graphics graphics) {
-            super.paintComponent(graphics);
-            Graphics2D g = (Graphics2D) graphics.create();
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int diameter = Math.round(54 + hover * 12);
-            int x = Math.round((getWidth() - diameter) / 2f - hover * 6);
-            int y = (getHeight() - diameter) / 2;
-            java.awt.Shape clip = new java.awt.geom.Ellipse2D.Float(x, y, diameter, diameter);
-            g.setColor(RmsColors.primaryLight());
-            g.fill(clip);
-            if (image != null) {
-                g.setClip(clip);
-                g.drawImage(image, x, y, diameter, diameter, null);
-            } else {
-                g.setColor(RmsColors.primary());
-                g.setFont(getFont().deriveFont(Font.BOLD, 17f));
-                java.awt.FontMetrics metrics = g.getFontMetrics();
-                String initials = "CH";
-                g.drawString(initials, x + (diameter - metrics.stringWidth(initials)) / 2,
-                        y + (diameter + metrics.getAscent() - metrics.getDescent()) / 2);
-            }
-            g.setClip(null);
-            g.setColor(RmsColors.primaryAccent());
-            g.draw(clip);
-            g.dispose();
-        }
-
-        @Override public void removeNotify() {
-            animation.stop();
-            super.removeNotify();
-        }
-    }
 }

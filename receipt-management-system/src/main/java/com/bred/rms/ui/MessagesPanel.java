@@ -3,6 +3,7 @@ package com.bred.rms.ui;
 import com.bred.rms.config.AppContext;
 import com.bred.rms.models.ChatMessage;
 import com.bred.rms.models.User;
+import com.bred.rms.ui.components.UserAvatar;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.theme.ThemeManager;
 import com.bred.rms.utils.BackgroundTask;
@@ -39,7 +40,6 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
-import java.awt.geom.Ellipse2D;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -502,7 +502,7 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
     private final class ContactRenderer extends JPanel implements ListCellRenderer<User> {
         private final JLabel name = new JLabel();
         private final JLabel detail = new JLabel();
-        private final ContactAvatar avatar = new ContactAvatar();
+        private final UserAvatar avatar = new UserAvatar(38, 36, false);
 
         private ContactRenderer() {
             super(new BorderLayout(10, 0));
@@ -526,7 +526,7 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
             name.setForeground(RmsColors.text());
             detail.setText(user.role().label());
             detail.setForeground(RmsColors.SECONDARY_TEXT);
-            avatar.setNameText(user.fullName());
+            avatar.setProfile(user.fullName(), user.email());
             setBackground(selected ? RmsColors.primaryLight() : new Color(0, 0, 0, 0));
             return this;
         }
@@ -539,31 +539,6 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
                         RmsColors.primaryAccent().getBlue(), ThemeManager.isDark() ? 40 : 35));
                 g.fillRoundRect(1, 1, getWidth() - 2, getHeight() - 2, 14, 14);
             }
-            g.dispose();
-        }
-    }
-
-    private static final class ContactAvatar extends JComponent {
-        private String nameText = "";
-
-        private ContactAvatar() { setPreferredSize(new Dimension(38, 38)); }
-
-        private void setNameText(String name) { nameText = name == null ? "" : name; }
-
-        @Override protected void paintComponent(Graphics graphics) {
-            Graphics2D g = (Graphics2D) graphics.create();
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int size = Math.min(getWidth(), getHeight()) - 2;
-            Ellipse2D circle = new Ellipse2D.Float(1, 1, size, size);
-            Color accent = RmsColors.primaryAccent();
-            g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 90));
-            g.fill(circle);
-            g.setColor(RmsColors.primary());
-            g.setFont(getFont().deriveFont(Font.BOLD, 12f));
-            String initials = initials(nameText);
-            var metrics = g.getFontMetrics();
-            g.drawString(initials, (getWidth() - metrics.stringWidth(initials)) / 2,
-                    (getHeight() + metrics.getAscent() - metrics.getDescent()) / 2);
             g.dispose();
         }
     }
@@ -606,11 +581,4 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
         }
     }
 
-    private static String initials(String value) {
-        String[] parts = value.trim().split("\\s+");
-        if (parts.length == 0 || parts[0].isBlank()) return "?";
-        return parts.length == 1 ? parts[0].substring(0, 1).toUpperCase(java.util.Locale.ROOT)
-                : (parts[0].substring(0, 1) + parts[parts.length - 1].substring(0, 1))
-                        .toUpperCase(java.util.Locale.ROOT);
-    }
 }

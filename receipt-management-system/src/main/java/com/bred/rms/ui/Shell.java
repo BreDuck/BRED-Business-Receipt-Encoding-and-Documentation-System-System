@@ -7,6 +7,7 @@ import com.bred.rms.security.AccessPolicy;
 import com.bred.rms.security.Module;
 import com.bred.rms.ui.components.StatusBadge;
 import com.bred.rms.ui.components.SurfacePanel;
+import com.bred.rms.ui.components.UserAvatar;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.admin.ActivityLogPanel;
 import com.bred.rms.ui.admin.UserManagementPanel;
@@ -41,16 +42,12 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Insets;
 import java.awt.RenderingHints;
-import java.awt.image.BufferedImage;
-import java.awt.geom.Ellipse2D;
 import java.awt.geom.RoundRectangle2D;
-import javax.imageio.ImageIO;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
-import java.io.IOException;
 
 /** The signed-in frame: sidebar menu (filtered by role), header with user info, and the active screen. */
 public final class Shell extends JPanel {
@@ -130,7 +127,11 @@ public final class Shell extends JPanel {
             case REPORTS -> new ReportsPanel(ctx);
             case USERS -> new UserManagementPanel(ctx);
             case ACTIVITY_LOG -> new ActivityLogPanel(ctx);
-            case SETTINGS -> new JScrollPane(new SettingsPanel(ctx));
+            case SETTINGS -> {
+                JScrollPane scroll = new JScrollPane(new SettingsPanel(ctx));
+                scroll.getVerticalScrollBar().setUnitIncrement(40);
+                yield scroll;
+            }
             case SUPPLIERS -> new SupplierPanel(ctx);
             case PROJECTS -> new ProjectPanel(ctx);
         };
@@ -341,8 +342,10 @@ public final class Shell extends JPanel {
                 : "Receipts are stored only on this computer.");
         tools.add(storage);
         if (user != null) {
-            if (user.role() == Role.CREATOR) {
-                tools.add(new ProfileAvatar());
+            if (user.role() == Role.CREATOR || UserAvatar.isDuckProfile(user.email())) {
+                UserAvatar avatar = new UserAvatar(38, 36, false);
+                avatar.setProfile(user.fullName(), user.email());
+                tools.add(avatar);
             }
             tools.add(new JLabel(user.fullName()));
             tools.add(StatusBadge.of(user.role().label(), user.role().canManageCompany() ? RmsColors.primary() : RmsColors.INFO));
@@ -360,50 +363,4 @@ public final class Shell extends JPanel {
         return header;
     }
 
-    private static final class ProfileAvatar extends JPanel {
-        private final BufferedImage image;
-
-        private ProfileAvatar() {
-            setOpaque(false);
-            setPreferredSize(new Dimension(38, 38));
-            setMaximumSize(new Dimension(38, 38));
-            setToolTipText("Creator profile");
-            BufferedImage loaded = null;
-            try {
-                var resource = ProfileAvatar.class.getResource("/com/bred/rms/ui/logo/breducklogo.png");
-                if (resource != null) loaded = ImageIO.read(resource);
-            } catch (IOException ignored) {
-                loaded = null;
-            }
-            image = loaded;
-        }
-
-        @Override
-        protected void paintComponent(Graphics graphics) {
-            super.paintComponent(graphics);
-            Graphics2D g = (Graphics2D) graphics.create();
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int diameter = 36;
-            int x = (getWidth() - diameter) / 2;
-            int y = (getHeight() - diameter) / 2;
-            Ellipse2D clip = new Ellipse2D.Float(x, y, diameter, diameter);
-            g.setClip(clip);
-            if (image != null) {
-                g.drawImage(image, x, y, diameter, diameter, null);
-            } else {
-                g.setColor(RmsColors.primaryLight());
-                g.fill(clip);
-                g.setColor(RmsColors.primary());
-                g.setFont(getFont().deriveFont(Font.BOLD, 13f));
-                String initials = "CH";
-                var metrics = g.getFontMetrics();
-                g.drawString(initials, x + (diameter - metrics.stringWidth(initials)) / 2,
-                        y + (diameter + metrics.getAscent() - metrics.getDescent()) / 2);
-            }
-            g.setClip(null);
-            g.setColor(RmsColors.primaryAccent());
-            g.draw(clip);
-            g.dispose();
-        }
-    }
 }
