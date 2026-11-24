@@ -23,7 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** Creator-only, cross-company history of direct and broadcast messages. */
+/** Creator-only, cross-company history of direct, group, and broadcast messages. */
 public final class HistoryPanel extends JPanel implements RefreshablePanel {
     private static final DateTimeFormatter STAMP =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.US);
@@ -78,8 +78,10 @@ public final class HistoryPanel extends JPanel implements RefreshablePanel {
         model.setRowCount(0);
         for (ChatMessage message : all) {
             String sender = label(message.senderName());
-            String recipient = label(message.recipientName());
-            String type = message.broadcast() ? "Broadcast" : "Direct";
+            String recipient = message.companyId() == null ? label(message.recipientName()) : "Company chat";
+            String type = message.companyId() != null
+                    ? (message.urgent() ? "Company · Urgent" : "Company")
+                    : message.broadcast() ? "Broadcast" : "Direct";
             String when = message.sentAt() == null ? "" : STAMP.format(message.sentAt().atZone(ZoneId.systemDefault()));
             String haystack = (when + " " + sender + " " + recipient + " " + type + " " + message.body())
                     .toLowerCase(Locale.ROOT);

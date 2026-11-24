@@ -13,6 +13,7 @@ import com.bred.rms.models.User;
 import com.bred.rms.models.Attachment;
 import com.bred.rms.models.ValidationException;
 import com.bred.rms.repositories.supabase.SupabaseActivityLogRepository;
+import com.bred.rms.repositories.supabase.SupabaseMessageRepository;
 import com.bred.rms.repositories.supabase.SupabaseProjectRepository;
 import com.bred.rms.repositories.supabase.SupabaseReceiptRepository;
 import com.bred.rms.repositories.supabase.SupabaseSupplierRepository;
@@ -336,6 +337,46 @@ class SupabaseRepositoriesTest {
             assertEquals("receipt.create", e.action());
             assertEquals("", e.userName());
             assertEquals(null, e.userId());
+        }
+    }
+
+    @Test
+    void companyChatReadsCompanyMessagesAndMapsUrgentFlag() {
+        try (TestEnv env = new TestEnv()) {
+            UUID companyId = UUID.fromString("11111111-0000-0000-0000-000000000001");
+            env.fake.on("GET", "/rest/v1/custom_messages", 200,
+                    "[{\"id\":\"" + RID + "\",\"sender_id\":\"" + SID + "\",\"recipient_id\":null,"
+                            + "\"company_id\":\"" + companyId + "\",\"sender_name\":\"Ada\","
+                            + "\"sender_email\":\"a@x.test\",\"recipient_name\":\"\",\"body\":\"Meeting now\","
+                            + "\"sent_at\":\"2026-11-05T01:02:03Z\",\"is_broadcast\":false,\"is_urgent\":true}]");
+
+            var messages = new SupabaseMessageRepository(env.rest).findCompanyChat(companyId);
+            assertEquals(1, messages.size());
+            assertEquals(companyId, messages.get(0).companyId());
+            assertTrue(messages.get(0).urgent());
+            String query = env.fake.requests("GET", "/rest/v1/custom_messages").get(0).pathAndQuery();
+            assertTrue(query.contains("company_id=eq." + companyId));
+            assertTrue(query.contains("recipient_id=is.null"));
+        }
+    }
+
+    @Test
+    void companyChatSendIncludesUrgencyAndCompanyScope() throws Exception {
+        try (TestEnv env = new TestEnv()) {
+            UUID companyId = UUID.fromString("11111111-0000-0000-0000-000000000001");
+            env.fake.on("POST", "/rest/v1/custom_messages", 201,
+                    "[{\"id\":\"" + RID + "\",\"sender_id\":\"" + SID + "\",\"recipient_id\":null,"
+                            + "\"company_id\":\"" + companyId + "\",\"sender_name\":\"Ada\","
+                            + "\"sender_email\":\"a@x.test\",\"recipient_name\":\"\",\"body\":\"Meeting now\","
+                            + "\"sent_at\":\"2026-11-05T01:02:03Z\",\"is_broadcast\":false,\"is_urgent\":true}]");
+
+            var sent = new SupabaseMessageRepository(env.rest).sendCompanyChat(companyId, " Meeting now ", true);
+            assertTrue(sent.urgent());
+            JsonNode body = M.readTree(env.fake.requests("POST", "/rest/v1/custom_messages").get(0).bodyString());
+            assertTrue(body.get("recipient_id").isNull());
+            assertEquals(companyId.toString(), body.get("company_id").asText());
+            assertEquals("Meeting now", body.get("body").asText());
+            assertTrue(body.get("is_urgent").asBoolean());
         }
     }
 }

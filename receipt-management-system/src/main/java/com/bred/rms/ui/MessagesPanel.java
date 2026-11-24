@@ -15,6 +15,7 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JList;
@@ -52,13 +53,13 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-/** Private one-to-one chats with a theme-aware glass interface. */
+/** Company group chat and private one-to-one chats with a theme-aware glass interface. */
 public final class MessagesPanel extends JPanel implements RefreshablePanel {
     private static final int POLL_MS = 5000;
     private static final int MAX_MESSAGE_LENGTH = 4000;
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("h:mm a");
 
-    private record Loaded(List<User> contacts, List<ChatMessage> messages) { }
+    private record Loaded(List<User> contacts, List<ChatMessage> messages, List<ChatMessage> companyMessages) { }
 
     private final AppContext ctx;
     private final Consumer<Boolean> themeListener = dark -> applyTheme();
@@ -66,27 +67,34 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
     private final DefaultListModel<User> contactModel = new DefaultListModel<>();
     private final JList<User> contactList = new JList<>(contactModel);
     private final JTextField search = new JTextField();
+    private final JButton companyChatButton = new JButton("Company chat");
     private final JPanel messageList = new JPanel();
     private final JScrollPane messageScroll = new StyledScrollPane(messageList);
     private final JTextArea composer = new JTextArea(3, 24);
     private final JButton sendButton = new JButton("Send");
+    private final JCheckBox urgentMessage = new JCheckBox("Urgent");
     private final RoundedSurface composerSurface = new RoundedSurface();
     private final JLabel contactCount = new JLabel(" ");
     private final JLabel conversationTitle = new JLabel("Your messages");
     private final JLabel conversationSubtitle = new JLabel("Select someone to start a conversation");
+    private final JLabel conversationType = new JLabel("PRIVATE CHAT");
     private final JLabel emptyState = new JLabel("<html><div style='text-align:center'>"
             + "<b>Your messages, in one place</b><br>Choose a teammate to start a private chat.</div></html>",
             SwingConstants.CENTER);
     private final JLabel status = new JLabel("Messages refresh automatically.");
     private List<User> contacts = List.of();
     private List<ChatMessage> messages = List.of();
+    private List<ChatMessage> companyMessages = List.of();
     private User selectedContact;
+    private boolean companyChatSelected;
     private boolean sending;
     private boolean rebuildingContacts;
 
     public MessagesPanel(AppContext ctx) {
         super(new BorderLayout(14, 14));
         this.ctx = ctx;
+        User current = ctx.currentUser.get();
+        companyChatSelected = current != null && current.companyId() != null;
         setOpaque(false);
         setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
         pollTimer.setCoalesce(true);
@@ -97,10 +105,14 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
         contactList.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
         contactList.setCellRenderer(new ContactRenderer());
         contactList.setOpaque(false);
+        companyChatButton.setVisible(current != null && current.companyId() != null);
+        companyChatButton.addActionListener(e -> selectCompanyChat());
         contactList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && !rebuildingContacts) {
                 User chosen = contactList.getSelectedValue();
                 if (chosen != null) {
+                    companyChatSelected = false;
+                    urgentMessage.setSelected(false);
                     selectedContact = chosen;
                     showConversation();
                 }
@@ -138,7 +150,9 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
             List<User> available = ctx.userRepository == null
                     ? List.of() : ctx.userRepository.findMessagingContacts();
             List<ChatMessage> recent = ctx.messages.findFor(me.id());
-            return new Loaded(available, recent);
+            List<ChatMessage> group = me.companyId() == null
+                    ? List.of() : ctx.messages.findCompanyChat(me.companyId());
+            return new Loaded(available, recent, group);
         }, this::applyLoaded, error -> status.setText(UiErrors.friendly(error)));
     }
 
@@ -150,7 +164,7 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
         labels.setLayout(new BoxLayout(labels, BoxLayout.Y_AXIS));
         JLabel title = new JLabel("Custom Messages");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 23f));
-        JLabel subtitle = new JLabel("A quiet space for quick, private conversations.");
+        JLabel subtitle = new JLabel("Company updates together, with private chats when you need them.");
         subtitle.setFont(subtitle.getFont().deriveFont(13f));
         subtitle.setForeground(RmsColors.SECONDARY_TEXT);
         status.setFont(status.getFont().deriveFont(11f));
@@ -197,11 +211,14 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
                 BorderFactory.createLineBorder(RmsColors.border(), 1, true),
                 BorderFactory.createEmptyBorder(8, 10, 8, 10)));
         search.setPreferredSize(new Dimension(0, 38));
+        companyChatButton.setHorizontalAlignment(SwingConstants.LEFT);
+        companyChatButton.setMargin(new Insets(9, 10, 9, 10));
 
         JPanel peopleTop = new JPanel(new BorderLayout(0, 11));
         peopleTop.setOpaque(false);
         peopleTop.add(peopleHeader, BorderLayout.NORTH);
         peopleTop.add(search, BorderLayout.CENTER);
+        if (companyChatButton.isVisible()) peopleTop.add(companyChatButton, BorderLayout.SOUTH);
         people.add(peopleTop, BorderLayout.NORTH);
         JScrollPane contactsScroll = new StyledScrollPane(contactList);
         contactsScroll.setBorder(null);
@@ -225,13 +242,12 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
         conversationLabels.add(conversationTitle);
         conversationLabels.add(Box.createVerticalStrut(4));
         conversationLabels.add(conversationSubtitle);
-        JLabel privacy = new JLabel("PRIVATE CHAT");
-        privacy.setFont(privacy.getFont().deriveFont(Font.BOLD, 9f));
-        privacy.setBorder(BorderFactory.createCompoundBorder(
+        conversationType.setFont(conversationType.getFont().deriveFont(Font.BOLD, 9f));
+        conversationType.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(RmsColors.border(), 1, true),
                 BorderFactory.createEmptyBorder(5, 8, 5, 8)));
         chatHeader.add(conversationLabels, BorderLayout.WEST);
-        chatHeader.add(privacy, BorderLayout.EAST);
+        chatHeader.add(conversationType, BorderLayout.EAST);
 
         messageList.setOpaque(false);
         messageList.setLayout(new BoxLayout(messageList, BoxLayout.Y_AXIS));
@@ -267,8 +283,12 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
         sendButton.setMargin(new Insets(6, 14, 6, 14));
         sendButton.setPreferredSize(new Dimension(sendButton.getPreferredSize().width, 36));
         sendButton.addActionListener(e -> sendMessage());
+        urgentMessage.setForeground(new Color(177, 52, 52));
+        urgentMessage.setToolTipText("Mark this company chat message as urgent.");
+        urgentMessage.setOpaque(false);
         JPanel sendHolder = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         sendHolder.setOpaque(false);
+        sendHolder.add(urgentMessage);
         sendHolder.add(sendButton);
         composerBox.add(sendHolder, BorderLayout.EAST);
 
@@ -307,19 +327,23 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
                                 latest.containsKey(u.id()) ? latest.get(u.id()).sentAt() : Instant.MIN)
                         .reversed().thenComparing(User::fullName, String.CASE_INSENSITIVE_ORDER))
                 .toList();
-        if (messages.equals(loaded.messages()) && contacts.equals(updatedContacts)) {
-            status.setText(contacts.isEmpty() ? "No teammates are available to message."
-                    : "Private chats · Refreshes every " + (POLL_MS / 1000) + " seconds");
+        if (messages.equals(loaded.messages()) && companyMessages.equals(loaded.companyMessages())
+                && contacts.equals(updatedContacts)) {
+            status.setText("Company chat and private messages · Refreshes every " + (POLL_MS / 1000) + " seconds");
             return;
         }
-        boolean messagesChanged = !messages.equals(loaded.messages());
+        boolean privateMessagesChanged = !messages.equals(loaded.messages());
+        boolean companyMessagesChanged = !companyMessages.equals(loaded.companyMessages());
         boolean wasAtBottom = isNearBottom();
         contacts = updatedContacts;
         messages = loaded.messages();
+        companyMessages = loaded.companyMessages();
         UUID previousId = selectedContact == null ? null : selectedContact.id();
         if (previousId != null) {
             selectedContact = contacts.stream().filter(u -> u.id().equals(previousId)).findFirst().orElse(null);
         }
+        User current = ctx.currentUser.get();
+        if (selectedContact == null && current != null && current.companyId() != null) companyChatSelected = true;
         rebuildingContacts = true;
         try {
             filterContacts();
@@ -330,14 +354,29 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
                         break;
                     }
                 }
+            } else {
+                contactList.clearSelection();
             }
         } finally {
             rebuildingContacts = false;
         }
-        showConversation(false, selectedContact != null && messagesChanged && wasAtBottom);
+        boolean activeMessagesChanged = companyChatSelected ? companyMessagesChanged : privateMessagesChanged;
+        showConversation(false, activeMessagesChanged && wasAtBottom);
         contactCount.setText(contacts.size() + (contacts.size() == 1 ? " person" : " people"));
-        status.setText(contacts.isEmpty() ? "No teammates are available to message."
-                : "Private chats · Refreshes every " + (POLL_MS / 1000) + " seconds");
+        status.setText("Company chat and private messages · Refreshes every " + (POLL_MS / 1000) + " seconds");
+    }
+
+    private void selectCompanyChat() {
+        companyChatSelected = true;
+        selectedContact = null;
+        urgentMessage.setSelected(false);
+        rebuildingContacts = true;
+        try {
+            contactList.clearSelection();
+        } finally {
+            rebuildingContacts = false;
+        }
+        showConversation();
     }
 
     private void filterContacts() {
@@ -362,9 +401,34 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
 
     private void showConversation(boolean forceScroll, boolean followLatest) {
         messageList.removeAll();
-        if (selectedContact == null) {
+        UUID me = ctx.currentUser.get() == null ? null : ctx.currentUser.get().id();
+        if (selectedContact == null && companyChatSelected) {
+            User current = ctx.currentUser.get();
+            conversationTitle.setText(current == null || current.companyName().isBlank()
+                    ? "Company chat" : current.companyName() + " chat");
+            conversationSubtitle.setText("Shared with everyone in your company");
+            conversationType.setText("COMPANY CHAT");
+            messageList.setLayout(new BoxLayout(messageList, BoxLayout.Y_AXIS));
+            List<ChatMessage> thread = companyMessages.stream()
+                    .filter(m -> m.recipientId() == null)
+                    .toList();
+            if (thread.isEmpty()) {
+                JLabel start = new JLabel("Start a conversation with your whole company.");
+                start.setForeground(RmsColors.SECONDARY_TEXT);
+                start.setAlignmentX(Component.CENTER_ALIGNMENT);
+                messageList.add(Box.createVerticalGlue());
+                messageList.add(start);
+                messageList.add(Box.createVerticalGlue());
+            } else {
+                for (ChatMessage message : thread) {
+                    messageList.add(createMessageRow(message, me));
+                    messageList.add(Box.createVerticalStrut(10));
+                }
+            }
+        } else if (selectedContact == null) {
             conversationTitle.setText("Your messages");
             conversationSubtitle.setText("Select someone to start a conversation");
+            conversationType.setText("PRIVATE CHAT");
             messageList.setLayout(new GridBagLayout());
             emptyState.setForeground(RmsColors.SECONDARY_TEXT);
             messageList.add(emptyState);
@@ -372,8 +436,8 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
             conversationTitle.setText(selectedContact.fullName());
             conversationSubtitle.setText(selectedContact.role().label()
                     + (selectedContact.companyName().isBlank() ? "" : " · " + selectedContact.companyName()));
+            conversationType.setText("PRIVATE CHAT");
             messageList.setLayout(new BoxLayout(messageList, BoxLayout.Y_AXIS));
-            UUID me = ctx.currentUser.get() == null ? null : ctx.currentUser.get().id();
             List<ChatMessage> thread = messages.stream()
                     .filter(m -> isBetween(m, me, selectedContact.id()))
                     .toList();
@@ -391,8 +455,10 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
                 }
             }
         }
-        composer.setEnabled(selectedContact != null);
-        sendButton.setEnabled(selectedContact != null && !sending);
+        boolean conversationSelected = selectedContact != null || companyChatSelected;
+        composer.setEnabled(conversationSelected);
+        urgentMessage.setVisible(companyChatSelected);
+        sendButton.setEnabled(conversationSelected && !sending);
         messageList.revalidate();
         messageList.repaint();
         if (forceScroll || followLatest) {
@@ -433,6 +499,21 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
         };
         bubble.setOpaque(false);
         bubble.setBorder(BorderFactory.createEmptyBorder(10, 13, 8, 13));
+        if (companyChatSelected && message.companyId() != null) {
+            JPanel meta = new JPanel(new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 0, 0));
+            meta.setOpaque(false);
+            JLabel author = new JLabel(mine ? "You" : message.senderName());
+            author.setFont(author.getFont().deriveFont(Font.BOLD, 10f));
+            author.setForeground(RmsColors.SECONDARY_TEXT);
+            meta.add(author);
+            if (message.urgent()) {
+                JLabel urgent = new JLabel("  URGENT");
+                urgent.setFont(urgent.getFont().deriveFont(Font.BOLD, 10f));
+                urgent.setForeground(new Color(190, 48, 48));
+                meta.add(urgent);
+            }
+            bubble.add(meta, BorderLayout.NORTH);
+        }
         String html = "<html><div style='width:300px'>" + escapeHtml(message.body()).replace("\n", "<br>")
                 + "</div></html>";
         JLabel body = new JLabel(html);
@@ -462,7 +543,7 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
     }
 
     private void sendMessage() {
-        if (sending || selectedContact == null) return;
+        if (sending || (selectedContact == null && !companyChatSelected)) return;
         String text = composer.getText().trim();
         if (text.isEmpty()) {
             status.setText("Write a message before sending.");
@@ -472,21 +553,29 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
             status.setText("Messages can be up to " + MAX_MESSAGE_LENGTH + " characters.");
             return;
         }
-        UUID recipientId = selectedContact.id();
+        boolean sendToCompany = companyChatSelected;
+        UUID recipientId = selectedContact == null ? null : selectedContact.id();
+        User current = ctx.currentUser.get();
+        UUID companyId = current == null ? null : current.companyId();
+        boolean urgent = sendToCompany && urgentMessage.isSelected();
         sending = true;
         sendButton.setEnabled(false);
         status.setText("Sending…");
-        BackgroundTask.run(() -> ctx.messages.send(recipientId, text), sent -> {
+        BackgroundTask.run(() -> sendToCompany
+                ? ctx.messages.sendCompanyChat(companyId, text, urgent)
+                : ctx.messages.send(recipientId, text), sent -> {
             sending = false;
-            sendButton.setEnabled(selectedContact != null);
-            if (selectedContact != null && selectedContact.id().equals(recipientId)
-                    && composer.getText().trim().equals(text)) {
+            sendButton.setEnabled(selectedContact != null || companyChatSelected);
+            boolean stillSameConversation = sendToCompany ? companyChatSelected
+                    : selectedContact != null && selectedContact.id().equals(recipientId);
+            if (stillSameConversation && composer.getText().trim().equals(text)) {
                 composer.setText("");
+                urgentMessage.setSelected(false);
             }
             refreshData();
         }, error -> {
             sending = false;
-            sendButton.setEnabled(selectedContact != null);
+            sendButton.setEnabled(selectedContact != null || companyChatSelected);
             status.setText(UiErrors.friendly(error));
         });
     }

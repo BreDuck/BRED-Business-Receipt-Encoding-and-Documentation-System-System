@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.bred.rms.models.ActivityEntry;
+import com.bred.rms.models.AccountStatus;
 import com.bred.rms.models.Attachment;
 import com.bred.rms.models.ChatMessage;
 import com.bred.rms.models.Company;
@@ -77,6 +78,7 @@ public final class LocalDatabase {
     private final Path file;
     private State state;
     private CurrentUser who = () -> null;
+    private boolean companyAssignmentsMigrated;
 
     private LocalDatabase(Path dir) {
         this.dir = dir;
@@ -100,15 +102,18 @@ public final class LocalDatabase {
                     && user.role() != Role.CREATOR) {
                 db.state.accounts.set(i, new Account(
                         new User(user.id(), user.fullName(), user.email(), Role.CREATOR, user.active(),
-                                user.accountStatus(), user.createdAt(), user.companyName()),
+                                user.accountStatus(), user.createdAt(), "", null),
                         account.salt(), account.hash()));
                 promotedCreator = true;
             }
         }
-        if (promotedCreator) db.write(s -> null);
+        if (promotedCreator || db.companyAssignmentsMigrated) db.write(s -> null);
+        db.companyAssignmentsMigrated = false;
         if (db.state.accounts.isEmpty()) {
             db.write(s -> {
-                User admin = new User(UUID.randomUUID(), "Administrator", DEFAULT_ADMIN_EMAIL, Role.ADMIN, true);
+                Company company = s.companies.get(0);
+                User admin = new User(UUID.randomUUID(), "Administrator", DEFAULT_ADMIN_EMAIL, Role.ADMIN, true,
+                        AccountStatus.APPROVED, Instant.EPOCH, company.name(), company.id());
                 s.accounts.add(hashed(admin, DEFAULT_ADMIN_PASSWORD));
                 return null;
             });
@@ -186,7 +191,7 @@ public final class LocalDatabase {
             @Override public List<User> findMessagingContacts() {
                 return read(s -> s.accounts.stream().map(Account::user).filter(User::active)
                         .map(u -> new User(u.id(), u.fullName(), "", u.role(), u.active(),
-                                u.accountStatus(), u.createdAt(), u.companyName()))
+                                u.accountStatus(), u.createdAt(), u.companyName(), u.companyId()))
                         .toList());
             }
 
@@ -202,7 +207,11 @@ public final class LocalDatabase {
                     }
                     Role effectiveRole = "clarkhilario.bread@gmail.com".equalsIgnoreCase(e)
                             ? Role.CREATOR : role;
-                    User u = new User(UUID.randomUUID(), fullName.trim(), e, effectiveRole, true);
+                    Company company = s.companies.get(0);
+                    User u = new User(UUID.randomUUID(), fullName.trim(), e, effectiveRole, true,
+                            AccountStatus.APPROVED, Instant.EPOCH,
+                            effectiveRole == Role.CREATOR ? "" : company.name(),
+                            effectiveRole == Role.CREATOR ? null : company.id());
                     s.accounts.add(hashed(u, new String(password)));
                     log(s, "user.create", e);
                     return u;
@@ -217,7 +226,11 @@ public final class LocalDatabase {
                         if (a.user().id().equals(id)) {
                             Role effectiveRole = "clarkhilario.bread@gmail.com".equalsIgnoreCase(a.user().email())
                                     ? Role.CREATOR : role;
-                            s.accounts.set(i, new Account(new User(id, fullName, a.user().email(), effectiveRole, active), a.salt(), a.hash()));
+                            User old = a.user();
+                            s.accounts.set(i, new Account(new User(id, fullName, old.email(), effectiveRole, active,
+                                    old.accountStatus(), old.createdAt(),
+                                    effectiveRole == Role.CREATOR ? "" : companyNameFor(s, old),
+                                    effectiveRole == Role.CREATOR ? null : companyIdFor(s, old)), a.salt(), a.hash()));
                             found = true;
                         }
                     }
@@ -255,7 +268,8 @@ public final class LocalDatabase {
                                     message.body(), message.sentAt(), message.broadcast(),
                                     senderDeleted ? "Deleted user" : message.senderName(),
                                     senderDeleted ? "" : message.senderEmail(),
-                                    recipientDeleted ? "Deleted user" : message.recipientName()));
+                                    recipientDeleted ? "Deleted user" : message.recipientName(),
+                                    message.companyId(), message.urgent()));
                         }
                     }
                     s.accounts.remove(target);
@@ -416,13 +430,26 @@ public final class LocalDatabase {
         return () -> read(s -> s.activity.stream().sorted(Comparator.comparing(ActivityEntry::at).reversed()).toList());
     }
 
-    /** Direct messages available in local-only mode. */
+    /** Messages available in local-only mode. */
     public MessageRepository messages() {
         return new MessageRepository() {
             @Override public List<ChatMessage> findFor(UUID userId) {
                 if (userId == null) return List.of();
                 return read(s -> s.messages.stream()
-                        .filter(m -> userId.equals(m.senderId()) || userId.equals(m.recipientId()))
+                        .filter(m -> m.recipientId() != null
+                                && (userId.equals(m.senderId()) || userId.equals(m.recipientId())))
+                        .sorted(Comparator.comparing(ChatMessage::sentAt).thenComparing(ChatMessage::id))
+                        .toList());
+            }
+
+            @Override public List<ChatMessage> findCompanyChat(UUID companyId) {
+                if (companyId == null) return List.of();
+                User current = who.get();
+                if (current == null || !current.active() || !companyId.equals(current.companyId())) {
+                    throw new SecurityException("You can only view your company's chat.");
+                }
+                return read(s -> s.messages.stream()
+                        .filter(m -> companyId.equals(m.companyId()) && m.recipientId() == null)
                         .sorted(Comparator.comparing(ChatMessage::sentAt).thenComparing(ChatMessage::id))
                         .toList());
             }
@@ -459,6 +486,25 @@ public final class LocalDatabase {
                     }
                     ChatMessage message = new ChatMessage(UUID.randomUUID(), sender.id(), recipient.id(), text,
                             Instant.now(), false, sender.fullName(), sender.email(), recipient.fullName());
+                    s.messages.add(message);
+                    return message;
+                });
+            }
+
+            @Override public ChatMessage sendCompanyChat(UUID companyId, String body, boolean urgent) {
+                String text = body == null ? "" : body.trim();
+                if (text.isEmpty()) throw new RepositoryException("Write a message before sending.", false);
+                if (text.length() > 4000) {
+                    throw new RepositoryException("Messages can be up to 4000 characters.", false);
+                }
+                return write(s -> {
+                    User sender = who.get();
+                    if (sender == null || !sender.active() || companyId == null
+                            || !companyId.equals(sender.companyId())) {
+                        throw new RepositoryException("You can only send messages to your company chat.", false);
+                    }
+                    ChatMessage message = new ChatMessage(UUID.randomUUID(), sender.id(), null, text,
+                            Instant.now(), false, sender.fullName(), sender.email(), "", companyId, urgent);
                     s.messages.add(message);
                     return message;
                 });
@@ -514,6 +560,15 @@ public final class LocalDatabase {
         s.activity.add(new ActivityEntry(Instant.now(), me == null ? null : me.id(), me == null ? "" : me.fullName(), action, detail));
     }
 
+    private static UUID companyIdFor(State s, User user) {
+        return user.companyId() == null ? s.companies.get(0).id() : user.companyId();
+    }
+
+    private static String companyNameFor(State s, User user) {
+        if (user.companyId() == null) return s.companies.get(0).name();
+        return user.companyName();
+    }
+
     // ---------------------------------------------------------------- storage
 
     private synchronized <T> T read(Function<State, T> f) { return f.apply(state); }
@@ -539,16 +594,28 @@ public final class LocalDatabase {
         try {
             JsonNode root = SupabaseHttp.JSON.readTree(Files.readAllBytes(file));
             if (root == null || !root.isObject()) throw new IOException("not a data file");
-            for (JsonNode n : root.path("users")) {
-                s.accounts.add(new Account(new User(UUID.fromString(n.path("id").asText()), n.path("fullName").asText(), n.path("email").asText(),
-                        Role.fromDb(n.path("role").asText()), n.path("active").asBoolean(true)), n.path("salt").asText(), n.path("hash").asText()));
-            }
             if (root.has("companies")) {
                 for (JsonNode n : root.path("companies")) {
                     s.companies.add(new Company(UUID.fromString(n.path("id").asText()), n.path("name").asText()));
                 }
             } else {
                 s.companies.add(new Company(UUID.randomUUID(), "Local Company"));
+            }
+            if (s.companies.isEmpty()) s.companies.add(new Company(UUID.randomUUID(), "Local Company"));
+            Company defaultCompany = s.companies.get(0);
+            for (JsonNode n : root.path("users")) {
+                Role role = Role.fromDb(n.path("role").asText());
+                UUID companyId = uuidOrNull(n.path("companyId"));
+                String companyName = n.path("companyName").asText("");
+                if (role != Role.CREATOR && companyId == null) {
+                    companyId = defaultCompany.id();
+                    companyName = defaultCompany.name();
+                    companyAssignmentsMigrated = true;
+                }
+                s.accounts.add(new Account(new User(UUID.fromString(n.path("id").asText()),
+                        n.path("fullName").asText(), n.path("email").asText(), role,
+                        n.path("active").asBoolean(true), AccountStatus.APPROVED, Instant.EPOCH,
+                        companyName, companyId), n.path("salt").asText(), n.path("hash").asText()));
             }
             for (JsonNode n : root.path("suppliers")) {
                 s.suppliers.add(new Supplier(UUID.fromString(n.path("id").asText()), n.path("businessName").asText(), n.path("tin").asText(),
@@ -580,7 +647,8 @@ public final class LocalDatabase {
                 }
                 s.messages.add(new ChatMessage(UUID.fromString(n.path("id").asText()),
                         senderId, recipientId, n.path("body").asText(), Instant.parse(n.path("sentAt").asText()),
-                        n.path("broadcast").asBoolean(false), senderName, senderEmail, recipientName));
+                        n.path("broadcast").asBoolean(false), senderName, senderEmail, recipientName,
+                        uuidOrNull(n.path("companyId")), n.path("urgent").asBoolean(false)));
             }
             return s;
         } catch (IOException | RuntimeException e) {
@@ -610,8 +678,11 @@ public final class LocalDatabase {
         ArrayNode users = root.putArray("users");
         for (Account a : state.accounts) {
             User u = a.user();
-            users.addObject().put("id", u.id().toString()).put("fullName", u.fullName()).put("email", u.email())
-                    .put("role", u.role().dbValue()).put("active", u.active()).put("salt", a.salt()).put("hash", a.hash());
+            ObjectNode user = users.addObject();
+            user.put("id", u.id().toString()).put("fullName", u.fullName()).put("email", u.email())
+                    .put("role", u.role().dbValue()).put("active", u.active()).put("companyName", u.companyName())
+                    .put("salt", a.salt()).put("hash", a.hash());
+            if (u.companyId() != null) user.put("companyId", u.companyId().toString());
         }
         ArrayNode companies = root.putArray("companies");
         for (Company company : state.companies) {
@@ -654,9 +725,10 @@ public final class LocalDatabase {
             ObjectNode n = messages.addObject().put("id", m.id().toString()).put("body", m.body())
                     .put("sentAt", m.sentAt().toString()).put("broadcast", m.broadcast())
                     .put("senderName", m.senderName()).put("senderEmail", m.senderEmail())
-                    .put("recipientName", m.recipientName());
+                    .put("recipientName", m.recipientName()).put("urgent", m.urgent());
             if (m.senderId() != null) n.put("senderId", m.senderId().toString());
             if (m.recipientId() != null) n.put("recipientId", m.recipientId().toString());
+            if (m.companyId() != null) n.put("companyId", m.companyId().toString());
         }
         try {
             byte[] bytes = SupabaseHttp.JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root).getBytes(StandardCharsets.UTF_8);

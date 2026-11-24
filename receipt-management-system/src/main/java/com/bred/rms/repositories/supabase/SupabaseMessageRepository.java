@@ -28,11 +28,46 @@ public final class SupabaseMessageRepository implements MessageRepository {
     @Override public List<ChatMessage> findFor(UUID userId) {
         try {
             List<ChatMessage> messages = new ArrayList<>();
-            String query = "select=id,sender_id,recipient_id,sender_name,sender_email,recipient_name,body,sent_at,is_broadcast"
+            String query = "select=id,sender_id,recipient_id,company_id,sender_name,sender_email,recipient_name,body,sent_at,is_broadcast,is_urgent"
+                    + "&recipient_id=not.is.null"
                     + "&or=(sender_id.eq." + userId + ",recipient_id.eq." + userId + ")"
                     + "&order=sent_at.asc,id.asc";
             for (JsonNode row : rest.selectAll("custom_messages", query)) messages.add(map(row));
             return List.copyOf(messages);
+        } catch (SupabaseException e) {
+            throw SupabaseErrors.translate(e);
+        }
+    }
+
+    @Override public List<ChatMessage> findCompanyChat(UUID companyId) {
+        if (companyId == null) return List.of();
+        try {
+            List<ChatMessage> messages = new ArrayList<>();
+            String query = "select=id,sender_id,recipient_id,company_id,sender_name,sender_email,recipient_name,body,sent_at,is_broadcast,is_urgent"
+                    + "&company_id=eq." + companyId
+                    + "&recipient_id=is.null"
+                    + "&order=sent_at.asc,id.asc";
+            for (JsonNode row : rest.selectAll("custom_messages", query)) messages.add(map(row));
+            return List.copyOf(messages);
+        } catch (SupabaseException e) {
+            throw SupabaseErrors.translate(e);
+        }
+    }
+
+    @Override public ChatMessage sendCompanyChat(UUID companyId, String body, boolean urgent) {
+        if (companyId == null) throw new RepositoryException("Your account is not assigned to a company.", false);
+        String text = validateBody(body);
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("recipient_id", null);
+        row.put("company_id", companyId.toString());
+        row.put("body", text);
+        row.put("is_urgent", urgent);
+        try {
+            JsonNode result = rest.insert("custom_messages", row);
+            if (!result.isArray() || result.isEmpty()) {
+                throw new RepositoryException("The message was not saved. Please try again.", false);
+            }
+            return map(result.get(0));
         } catch (SupabaseException e) {
             throw SupabaseErrors.translate(e);
         }
@@ -87,7 +122,7 @@ public final class SupabaseMessageRepository implements MessageRepository {
         if (userId == null || since == null) return List.of();
         try {
             String encodedSince = URLEncoder.encode(since.toString(), StandardCharsets.UTF_8);
-            String query = "select=id,sender_id,recipient_id,sender_name,sender_email,recipient_name,body,sent_at,is_broadcast"
+            String query = "select=id,sender_id,recipient_id,company_id,sender_name,sender_email,recipient_name,body,sent_at,is_broadcast,is_urgent"
                     + "&recipient_id=eq." + userId
                     + "&is_broadcast=eq.true"
                     + "&sent_at=gte." + encodedSince
@@ -114,6 +149,7 @@ public final class SupabaseMessageRepository implements MessageRepository {
                 Json.uuid(row, "recipient_id"), Json.text(row, "body"), Json.instant(row, "sent_at"),
                 row.path("is_broadcast").asBoolean(false), Json.text(row, "sender_name"),
                 Json.text(row, "sender_email"),
-                Json.text(row, "recipient_name"));
+                Json.text(row, "recipient_name"), Json.uuid(row, "company_id"),
+                row.path("is_urgent").asBoolean(false));
     }
 }

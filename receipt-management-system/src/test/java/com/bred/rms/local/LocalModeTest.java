@@ -165,6 +165,31 @@ class LocalModeTest {
     }
 
     @Test
+    void companyChatIsSharedUrgentAndSurvivesARestart() throws Exception {
+        Path dir = newDir();
+        AppContext ctx = adminContext(dir);
+        User sender = ctx.auth.current();
+        User teammate = ctx.users.create("Eli Encoder", "eli@x.test", Role.ENCODER, "secret1".toCharArray());
+        assertEquals(sender.companyId(), teammate.companyId());
+
+        ChatMessage urgent = ctx.messages.sendCompanyChat(sender.companyId(), "Meeting now", true);
+        assertTrue(urgent.urgent());
+        assertEquals(sender.companyId(), urgent.companyId());
+        assertTrue(ctx.messages.findFor(sender.id()).isEmpty());
+        ctx.auth.logout();
+        User signedInTeammate = ctx.auth.login("eli@x.test", "secret1".toCharArray());
+        assertEquals(List.of(urgent), ctx.messages.findCompanyChat(signedInTeammate.companyId()));
+        assertThrows(SecurityException.class,
+                () -> ctx.messages.findCompanyChat(UUID.randomUUID()));
+        assertThrows(RepositoryException.class,
+                () -> ctx.messages.sendCompanyChat(UUID.randomUUID(), "Wrong company", false));
+        ctx.auth.logout();
+
+        AppContext reopened = adminContext(dir);
+        assertEquals(List.of(urgent), reopened.messages.findCompanyChat(sender.companyId()));
+    }
+
+    @Test
     void creatorBroadcastsAndDeletedUsersRemainInGlobalHistory() throws Exception {
         Path dir = newDir();
         AppContext ctx = adminContext(dir);

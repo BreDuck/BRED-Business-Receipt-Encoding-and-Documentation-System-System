@@ -21,12 +21,14 @@ and Maven on the computer that runs the app.
    9. `009_creator_account.sql`: assigns `clarkhilario.bread@gmail.com` to the protected Creator role
    10. `010_custom_messages.sql`: private direct messages and company-aware teammate contacts
    11. `011_creator_management_and_broadcasts.sql`: Creator company controls, deleted-account message retention, global history and broadcasts
+   12. `012_company_group_chat.sql`: company-wide group chat and urgent message labels
 
    Migration 008 creates a `Legacy Company` only when needed and assigns previously unscoped records and profiles to it.
    Existing companies are retained. The Creator can see all companies; Admins and Encoders are restricted to their own.
    Migration 011 permits company edits/deletion only for the Creator. A company with linked profiles or business records
    cannot be deleted. Deleting an account keeps its message text in History and replaces its profile references with a
    deleted-user label.
+   Migration 012 adds a shared chat for each company; apply it to enable the group room in the desktop app.
 
 ## 3. Create a Creator account
 1. **Authentication → Users → Add user → Create new user.** Enter your email and a password, and tick **Auto Confirm User**.

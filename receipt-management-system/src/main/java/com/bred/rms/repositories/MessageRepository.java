@@ -14,6 +14,16 @@ public interface MessageRepository {
     /** Sends a message to another user. */
     ChatMessage send(UUID recipientId, String body);
 
+    /** Returns the company chat for a company, oldest first. */
+    default List<ChatMessage> findCompanyChat(UUID companyId) {
+        throw new RepositoryException("Company chat is not available.", false);
+    }
+
+    /** Sends a message to the company chat. */
+    default ChatMessage sendCompanyChat(UUID companyId, String body, boolean urgent) {
+        throw new RepositoryException("Company chat is not available.", false);
+    }
+
     /** Returns all messages across companies; implementations must restrict this to the Creator. */
     default List<ChatMessage> findHistory() {
         throw new RepositoryException("Global message history is not available.", false);

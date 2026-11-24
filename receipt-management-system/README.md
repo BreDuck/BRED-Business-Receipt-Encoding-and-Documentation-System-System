@@ -12,6 +12,7 @@ starting the app (see [SETUP.md](SETUP.md)). Existing local data can be imported
 - **Search and filter**: by receipt number, TIN, supplier, product description, date range, supplier or project.
 - **Suppliers and Projects**: business name, TIN, address, contact; project name, code, fund source, with total spend per project.
 - **Dashboard and Reports**: this month's receipts and spend, recent receipts, totals by project, supplier or month, CSV export.
+- **Messaging**: a company-wide group chat with urgent message labels, plus private one-to-one chats.
 - **Users and Activity Log** (admins): create accounts, change roles, deactivate people, see who changed what.
 - **Creator tools**: view all accounts and companies, edit and delete accounts/companies, send password reset links,
   inspect cross-company chat history, and broadcast persistent messages with profile-picture toasts.
