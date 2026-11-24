@@ -1,6 +1,7 @@
 package com.bred.rms.ui.admin;
 
 import com.bred.rms.config.AppContext;
+import com.bred.rms.models.AccountStatus;
 import com.bred.rms.models.User;
 import com.bred.rms.ui.RefreshablePanel;
 import com.bred.rms.ui.UiErrors;
@@ -10,29 +11,38 @@ import com.bred.rms.utils.BackgroundTask;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.SwingUtilities;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 /** Administrators add accounts, change names/roles and activate or deactivate people. */
 public final class UserManagementPanel extends JPanel implements RefreshablePanel {
+    private static final DateTimeFormatter REGISTERED =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
     private final AppContext ctx;
-    private final DefaultTableModel model = new DefaultTableModel(new String[]{"Name", "Email", "Role", "Status"}, 0) {
+    private final DefaultTableModel model = new DefaultTableModel(
+            new String[]{"Name", "Email", "Applying Company", "Role", "Registration Date", "Account Status"}, 0) {
         @Override public boolean isCellEditable(int row, int column) { return false; }
     };
     private final JTable table = new JTable(model);
     private final JLabel status = new JLabel(" ");
     private final JButton edit = new JButton("Edit");
     private final JButton toggle = new JButton("Deactivate");
+    private final JButton approve = new JButton("Approve");
+    private final JButton reject = new JButton("Reject");
     private List<User> shown = new ArrayList<>();
 
     /** Builds the panel and loads accounts. */
@@ -43,14 +53,19 @@ public final class UserManagementPanel extends JPanel implements RefreshablePane
         add.addActionListener(e -> openForm(null));
         edit.addActionListener(e -> selected().ifPresent(this::openForm));
         toggle.addActionListener(e -> selected().ifPresent(this::toggleActive));
+        approve.addActionListener(e -> selected().ifPresent(u -> review(u, AccountStatus.APPROVED)));
+        reject.addActionListener(e -> selected().ifPresent(u -> review(u, AccountStatus.REJECTED)));
         JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         bar.add(add);
         bar.add(edit);
         bar.add(toggle);
+        bar.add(approve);
+        bar.add(reject);
         add(bar, BorderLayout.NORTH);
         table.setRowHeight(28);
         table.setFillsViewportHeight(true);
         table.getTableHeader().setReorderingAllowed(false);
+        table.getColumnModel().getColumn(5).setCellRenderer(new StatusRenderer());
         table.getSelectionModel().addListSelectionListener(e -> updateButtons());
         table.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
@@ -74,8 +89,15 @@ public final class UserManagementPanel extends JPanel implements RefreshablePane
         shown = new ArrayList<>(users);
         shown.sort((a, b) -> a.fullName().compareToIgnoreCase(b.fullName()));
         model.setRowCount(0);
-        for (User u : shown) model.addRow(new Object[]{u.fullName(), u.email(), u.role().label(), u.active() ? "Active" : "Inactive"});
-        status.setText(shown.size() + " user(s)");
+        int pending = 0;
+        for (User u : shown) {
+            if (u.accountStatus() == AccountStatus.PENDING) pending++;
+            String accountStatus = u.accountStatus() == AccountStatus.APPROVED && !u.active()
+                    ? "INACTIVE" : u.accountStatus().name();
+            model.addRow(new Object[]{u.fullName(), u.email(), u.companyName(), u.role().label(),
+                    REGISTERED.format(u.createdAt()), accountStatus});
+        }
+        status.setText(shown.size() + " user(s) · " + pending + " pending registration(s)");
         updateButtons();
     }
 
@@ -87,8 +109,11 @@ public final class UserManagementPanel extends JPanel implements RefreshablePane
     private void updateButtons() {
         Optional<User> u = selected();
         edit.setEnabled(u.isPresent());
-        toggle.setEnabled(u.isPresent());
+        toggle.setEnabled(u.isPresent() && u.get().accountStatus() == AccountStatus.APPROVED);
         toggle.setText(u.isPresent() && !u.get().active() ? "Activate" : "Deactivate");
+        boolean pending = u.isPresent() && u.get().accountStatus() == AccountStatus.PENDING;
+        approve.setEnabled(pending);
+        reject.setEnabled(pending);
     }
 
     private void openForm(User existing) {
@@ -104,5 +129,41 @@ public final class UserManagementPanel extends JPanel implements RefreshablePane
             status.setText(UiErrors.friendly(e));
             updateButtons();
         });
+    }
+
+    private void review(User user, AccountStatus decision) {
+        String verb = decision == AccountStatus.APPROVED ? "approve" : "reject";
+        int answer = JOptionPane.showConfirmDialog(this,
+                "Are you sure you want to " + verb + " " + user.fullName() + " (" + user.email() + ")?",
+                decision == AccountStatus.APPROVED ? "Approve registration" : "Reject registration",
+                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (answer != JOptionPane.YES_OPTION) return;
+
+        approve.setEnabled(false);
+        reject.setEnabled(false);
+        BackgroundTask.run(() -> {
+            ctx.users.reviewRegistration(user.id(), decision);
+            return Boolean.TRUE;
+        }, ignored -> refreshData(), error -> {
+            status.setText(UiErrors.friendly(error));
+            updateButtons();
+        });
+    }
+
+    private static final class StatusRenderer extends DefaultTableCellRenderer {
+        @Override public java.awt.Component getTableCellRendererComponent(JTable table, Object value,
+                boolean selected, boolean focused, int row, int column) {
+            java.awt.Component cell = super.getTableCellRendererComponent(table, value, selected, focused, row, column);
+            if (!selected) {
+                String status = value == null ? "" : value.toString();
+                setForeground(switch (status) {
+                    case "PENDING" -> RmsColors.WARNING;
+                    case "APPROVED" -> RmsColors.SUCCESS;
+                    case "REJECTED", "INACTIVE" -> RmsColors.DANGER;
+                    default -> RmsColors.SECONDARY_TEXT;
+                });
+            }
+            return cell;
+        }
     }
 }

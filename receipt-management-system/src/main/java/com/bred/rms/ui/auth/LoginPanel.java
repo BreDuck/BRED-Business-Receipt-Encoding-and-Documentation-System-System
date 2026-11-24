@@ -1,5 +1,6 @@
 package com.bred.rms.ui.auth;
 
+import com.bred.rms.models.Company;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.theme.ThemeManager;
 
@@ -35,7 +36,9 @@ import java.awt.geom.Ellipse2D;
 import java.awt.geom.Path2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.Shape;
+import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /** Sign-in screen for BRED, the Business Receipt Encoding and Documentation System. */
 public final class LoginPanel extends JLayeredPane {
@@ -45,7 +48,15 @@ public final class LoginPanel extends JLayeredPane {
         void handle(String email, char[] password, Consumer<String> done);
     }
 
+    /** Submits a public registration request and returns an error message, or null on success. */
+    @FunctionalInterface
+    public interface RegistrationHandler {
+        void handle(String fullName, String email, java.util.UUID companyId, char[] password, Consumer<String> done);
+    }
+
     private final LoginHandler loginHandler;
+    private final RegistrationHandler registrationHandler;
+    private final Supplier<List<Company>> companyLoader;
     private final JTextField emailField = new RoundedLoginTextField();
     private final JPasswordField passwordField = new RoundedLoginPasswordField();
     private final JLabel hintLabel = new JLabel(" ", SwingConstants.CENTER);
@@ -65,8 +76,21 @@ public final class LoginPanel extends JLayeredPane {
 
     /** Creates a sign-in panel for a login callback. */
     public LoginPanel(LoginHandler loginHandler) {
+        this(loginHandler, null, List::of);
+    }
+
+    /** Creates a sign-in panel with an optional public registration callback. */
+    public LoginPanel(LoginHandler loginHandler, RegistrationHandler registrationHandler) {
+        this(loginHandler, registrationHandler, List::of);
+    }
+
+    /** Creates a sign-in panel with company data for public registration. */
+    public LoginPanel(LoginHandler loginHandler, RegistrationHandler registrationHandler,
+                      Supplier<List<Company>> companyLoader) {
         if (loginHandler == null) throw new IllegalArgumentException("loginHandler");
         this.loginHandler = loginHandler;
+        this.registrationHandler = registrationHandler;
+        this.companyLoader = companyLoader;
         setLayout(null);
         setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
 
@@ -92,6 +116,14 @@ public final class LoginPanel extends JLayeredPane {
         applyTheme();
 
         signInButton.addActionListener(event -> attemptLogin());
+        createAccountButton.addActionListener(event -> {
+            if (registrationHandler == null) {
+                JOptionPane.showMessageDialog(this, "Account registration is not available.",
+                        "Create Account", JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                RegistrationPanel.showDialog(SwingUtilities.getWindowAncestor(this), registrationHandler, companyLoader);
+            }
+        });
         passwordField.addActionListener(event -> attemptLogin());
     }
 
@@ -272,10 +304,7 @@ public final class LoginPanel extends JLayeredPane {
         JPanel actions = new JPanel(new GridLayout(1, 2, 10, 0));
         actions.setOpaque(false);
         styleActionButton(createAccountButton);
-        createAccountButton.setToolTipText("Accounts are created by your administrator");
-        createAccountButton.addActionListener(event -> JOptionPane.showMessageDialog(
-                this, "Please contact your system administrator to create an account.",
-                "Create Account", JOptionPane.INFORMATION_MESSAGE));
+        createAccountButton.setToolTipText("Request a BRED account");
         styleActionButton(signInButton);
         signInButton.setFont(signInButton.getFont().deriveFont(Font.BOLD, 14f));
         actions.add(createAccountButton);

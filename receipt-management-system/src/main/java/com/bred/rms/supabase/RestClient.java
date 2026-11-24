@@ -65,10 +65,24 @@ public final class RestClient {
         return authed(t -> http.send("POST", "/functions/v1/" + function, body, t, null));
     }
 
+    /** Invokes a read-only Edge Function endpoint. */
+    public JsonNode getFunction(String function, String query) throws SupabaseException {
+        String suffix = query == null || query.isBlank() ? "" : "?" + query;
+        return authed(t -> http.send("GET", "/functions/v1/" + function + suffix, null, t, null));
+    }
+
     /** Inserts a row and returns the stored row(s). */
     public JsonNode insert(String table, Object row) throws SupabaseException {
         String body = SupabaseHttp.toJson(row);
         return authed(t -> http.send("POST", "/rest/v1/" + table, body, t, Map.of("Prefer", "return=representation")));
+    }
+
+    /** Inserts or updates a row by its primary key. */
+    public JsonNode upsert(String table, String conflictColumn, Object row) throws SupabaseException {
+        String body = SupabaseHttp.toJson(row);
+        String path = "/rest/v1/" + table + "?on_conflict=" + conflictColumn;
+        return authed(t -> http.send("POST", path, body, t,
+                Map.of("Prefer", "resolution=merge-duplicates,return=representation")));
     }
 
     /** PATCH (update) rows matching the query filter and returns them. */
@@ -84,7 +98,13 @@ public final class RestClient {
 
     /** Uploads a file to Storage (never overwrites an existing object). */
     public void uploadObject(String bucket, String path, byte[] data, String contentType) throws SupabaseException {
-        authed(t -> http.sendBytes("POST", "/storage/v1/object/" + bucket + "/" + path, data, contentType, t, Map.of("x-upsert", "false")));
+        uploadObject(bucket, path, data, contentType, false);
+    }
+
+    /** Uploads an object, optionally replacing it when the path already exists. */
+    public void uploadObject(String bucket, String path, byte[] data, String contentType, boolean upsert) throws SupabaseException {
+        authed(t -> http.sendBytes("POST", "/storage/v1/object/" + bucket + "/" + path, data, contentType, t,
+                Map.of("x-upsert", Boolean.toString(upsert))));
     }
 
     /** Downloads a file from a private Storage bucket. */

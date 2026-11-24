@@ -223,13 +223,65 @@ class SupabaseRepositoriesTest {
     }
 
     @Test
+    void publicRegistrationUsesRegistrationFunctionWithoutSigningIn() throws Exception {
+        try (TestEnv env = new TestEnv()) {
+            env.fake.on("POST", "/functions/v1/register-account", 201, "{\"message\":\"submitted\"}");
+            UUID companyId = UUID.fromString("11111111-0000-0000-0000-000000000001");
+            new SupabaseUserRepository(env.rest).registerAccount("Ada", "ada@x.test", companyId, "Password123".toCharArray());
+            assertEquals(1, env.fake.requests("POST", "/functions/v1/register-account").size());
+            JsonNode body = M.readTree(env.fake.requests("POST", "/functions/v1/register-account").get(0).bodyString());
+            assertEquals("Password123", body.get("password").asText());
+            assertEquals(companyId.toString(), body.get("company_id").asText());
+            assertTrue(env.sessions.current().isPresent(), "registration must not replace the current session");
+        }
+    }
+
+    @Test
+    void availableCompaniesComeFromPublicRegistrationFunction() {
+        try (TestEnv env = new TestEnv()) {
+            env.fake.on("GET", "/functions/v1/register-account", 200,
+                    "[{\"id\":\"11111111-0000-0000-0000-000000000001\",\"name\":\"Acme Ltd\"}]");
+            var companies = new SupabaseUserRepository(env.rest).availableCompanies();
+            assertEquals(1, companies.size());
+            assertEquals("Acme Ltd", companies.get(0).name());
+            assertTrue(env.fake.requests("GET", "/functions/v1/register-account").get(0)
+                    .pathAndQuery().contains("mode=companies"));
+        }
+    }
+
+    @Test
+    void missingRegistrationFunctionExplainsHowToDeployIt() {
+        try (TestEnv env = new TestEnv()) {
+            env.fake.on("GET", "/functions/v1/register-account", 404,
+                    "{\"message\":\"Function not found\"}");
+            RepositoryException error = assertThrows(RepositoryException.class,
+                    () -> new SupabaseUserRepository(env.rest).availableCompanies());
+            assertTrue(error.getMessage().contains("register-account"));
+            assertTrue(error.getMessage().contains("npx supabase functions deploy"));
+        }
+    }
+
+    @Test
+    void registrationReviewUsesProtectedFunction() {
+        try (TestEnv env = new TestEnv()) {
+            env.fake.on("POST", "/functions/v1/review-account", 200, "{\"account_status\":\"APPROVED\"}");
+            new SupabaseUserRepository(env.rest).reviewRegistration(UUID.fromString(SID),
+                    com.bred.rms.models.AccountStatus.APPROVED);
+            assertTrue(env.fake.requests("POST", "/functions/v1/review-account").get(0).bodyString()
+                    .contains("\"action\":\"APPROVE\""));
+        }
+    }
+
+    @Test
     void userRepositoryMapsProfilesAndUnknownRoleFallsBackToEncoder() {
         try (TestEnv env = new TestEnv()) {
             env.fake.on("GET", "/rest/v1/profiles", 200,
-                    "[{\"id\":\"" + SID + "\",\"full_name\":\"Ada\",\"email\":\"a@x.test\",\"role\":\"admin\",\"is_active\":true},"
+                    "[{\"id\":\"" + SID + "\",\"full_name\":\"Ada\",\"email\":\"a@x.test\",\"role\":\"admin\",\"is_active\":true,"
+                            + "\"companies\":{\"name\":\"Acme Ltd\"}},"
                             + "{\"id\":\"" + PID + "\",\"full_name\":\"Odd\",\"email\":\"o@x.test\",\"role\":\"wizard\",\"is_active\":false}]");
             List<User> users = new SupabaseUserRepository(env.rest).findAll();
             assertEquals(Role.ADMIN, users.get(0).role());
+            assertEquals("Acme Ltd", users.get(0).companyName());
             assertEquals(Role.ENCODER, users.get(1).role());
             assertEquals(false, users.get(1).active());
         }

@@ -15,13 +15,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AuthServiceTest {
     private static final String UID = "dddddddd-0000-0000-0000-000000000009";
+    private static final UUID COMPANY_ID = UUID.fromString("11111111-0000-0000-0000-000000000001");
 
     private static String tokenResponse() {
         return "{\"access_token\":\"tokA\",\"refresh_token\":\"refA\",\"expires_in\":3600,\"user\":{\"id\":\"" + UID + "\",\"email\":\"ada@x.test\"}}";
     }
 
     private static String profile(boolean active) {
-        return "[{\"id\":\"" + UID + "\",\"full_name\":\"Ada Admin\",\"email\":\"ada@x.test\",\"role\":\"admin\",\"is_active\":" + active + "}]";
+        return "[{\"id\":\"" + UID + "\",\"full_name\":\"Ada Admin\",\"email\":\"ada@x.test\",\"role\":\"admin\",\"is_active\":"
+                + active + ",\"account_status\":\"APPROVED\",\"created_at\":\"2026-01-01T00:00:00Z\"}]";
+    }
+
+    private static String profile(String status, boolean active) {
+        return "[{\"id\":\"" + UID + "\",\"full_name\":\"Ada\",\"email\":\"ada@x.test\",\"role\":\"encoder\",\"is_active\":"
+                + active + ",\"account_status\":\"" + status + "\",\"created_at\":\"2026-01-01T00:00:00Z\"}]";
     }
 
     private static AuthService service(TestEnv env) {
@@ -64,6 +71,58 @@ class AuthServiceTest {
             AuthException e = assertThrows(AuthException.class, () -> service(env).login("ada@x.test", "pw123456".toCharArray()));
             assertEquals("This account is inactive.", e.getMessage());
             assertTrue(env.sessions.current().isEmpty());
+        }
+    }
+
+    @Test
+    void pendingRegistrationIsRejectedAndSessionCleared() {
+        try (TestEnv env = new TestEnv()) {
+            env.sessions.clear();
+            env.fake.on("POST", "/auth/v1/token", 200, tokenResponse());
+            env.fake.on("GET", "/rest/v1/profiles", 200, profile("PENDING", false));
+            AuthException e = assertThrows(AuthException.class,
+                    () -> service(env).login("ada@x.test", "pw123456".toCharArray()));
+            assertEquals("Your registration is pending administrator approval.", e.getMessage());
+            assertTrue(env.sessions.current().isEmpty());
+        }
+    }
+
+    @Test
+    void rejectedRegistrationIsRejectedAndSessionCleared() {
+        try (TestEnv env = new TestEnv()) {
+            env.sessions.clear();
+            env.fake.on("POST", "/auth/v1/token", 200, tokenResponse());
+            env.fake.on("GET", "/rest/v1/profiles", 200, profile("REJECTED", false));
+            AuthException e = assertThrows(AuthException.class,
+                    () -> service(env).login("ada@x.test", "pw123456".toCharArray()));
+            assertEquals("Your registration was rejected. Please contact an administrator.", e.getMessage());
+            assertTrue(env.sessions.current().isEmpty());
+        }
+    }
+
+    @Test
+    void registrationSubmitsRequestWithoutSigningIn() throws Exception {
+        try (TestEnv env = new TestEnv()) {
+            env.sessions.clear();
+            env.fake.on("POST", "/functions/v1/register-account", 201,
+                    "{\"message\":\"Your registration has been submitted successfully.\"}");
+            service(env).registerAccount("Ada Lovelace", "ada@x.test", COMPANY_ID, "Password123".toCharArray());
+            var request = env.fake.requests("POST", "/functions/v1/register-account").get(0);
+            assertTrue(request.bodyString().contains("\"full_name\":\"Ada Lovelace\""));
+            assertTrue(request.bodyString().contains("\"email\":\"ada@x.test\""));
+            assertTrue(request.bodyString().contains("\"password\":\"Password123\""));
+            assertTrue(request.bodyString().contains("\"company_id\":\"" + COMPANY_ID + "\""));
+            assertTrue(env.sessions.current().isEmpty());
+        }
+    }
+
+    @Test
+    void registrationRejectsWeakPasswordBeforeRequest() {
+        try (TestEnv env = new TestEnv()) {
+            AuthException e = assertThrows(AuthException.class,
+                    () -> service(env).registerAccount("Ada", "ada@x.test", COMPANY_ID, "12345678".toCharArray()));
+            assertTrue(e.getMessage().contains("letter and one number"));
+            assertTrue(env.fake.requests().isEmpty());
         }
     }
 

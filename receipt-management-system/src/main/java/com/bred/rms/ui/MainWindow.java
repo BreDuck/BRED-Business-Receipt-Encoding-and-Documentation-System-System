@@ -4,6 +4,7 @@ import com.bred.rms.config.AppContext;
 import com.bred.rms.services.AuthException;
 import com.bred.rms.ui.auth.LoginPanel;
 import com.bred.rms.ui.auth.SetupPanel;
+import com.bred.rms.ui.UiErrors;
 import com.bred.rms.utils.BackgroundTask;
 
 import javax.swing.JFrame;
@@ -36,7 +37,17 @@ public final class MainWindow extends JFrame {
             cards.show(root, "setup");
             return;
         }
-        login = new LoginPanel(this::attemptLogin);
+        login = new LoginPanel(this::attemptLogin, (fullName, email, companyId, password, done) ->
+                BackgroundTask.run(() -> {
+                    try {
+                        ctx.auth.registerAccount(fullName, email, companyId, password);
+                    } catch (AuthException e) {
+                        throw new RegistrationFailure(e.getMessage());
+                    }
+                    return Boolean.TRUE;
+                }, ignored -> done.accept(null), error -> done.accept(
+                        error instanceof RegistrationFailure ? error.getMessage() : UiErrors.friendly(error))),
+                ctx.userRepository::availableCompanies);
         login.setHint(ctx.loginHint);
         root.add(login, "login");
         cards.show(root, "login");
@@ -67,5 +78,9 @@ public final class MainWindow extends JFrame {
         cards.show(root, "login");
         root.revalidate();
         root.repaint();
+    }
+
+    private static final class RegistrationFailure extends RuntimeException {
+        private RegistrationFailure(String message) { super(message); }
     }
 }

@@ -3,8 +3,8 @@
 A desktop app for a small office to encode business receipts, keep them in one searchable directory, and open any
 receipt in a layout that looks like the paper original.
 
-It works **out of the box with no internet and no account**: data is kept in a folder on your computer. If you later
-want several computers to share the same data, connect it to your own Supabase project (see SETUP.md).
+The app stores data in **Supabase** so multiple computers share the same records. Configure your project before
+starting the app (see [SETUP.md](SETUP.md)). Existing local data can be imported from **Settings** by an administrator.
 
 ## What it does
 - **Receipts**: add, view, edit and delete (admins only) receipts with line items, VAT, discount, additional charges and a computed grand total in pesos (₱). Attach a photo or PDF (png, jpg, jpeg, pdf, up to 10 MB each).
@@ -20,17 +20,16 @@ want several computers to share the same data, connect it to your own Supabase p
 | Admin | Everything, including deleting receipts, managing users and reading the activity log |
 | Encoder | Add and edit receipts, suppliers and projects; view the dashboard and reports. No deleting, no Users, no Activity Log |
 
-There is no public sign-up. An admin creates every account.
+Anyone may submit a **Create Account** request from the sign-in screen. New accounts remain pending and cannot access BRED
+until an administrator approves them in **Users**. An administrator may also continue to create accounts directly.
 
 ## Getting started
 1. Install Java 21 or newer and Maven.
 2. Run the app: `mvn -q exec:java` (or `mvn -q package`, then `java -jar target/bred-0.1.0-SNAPSHOT.jar`). In VS Code, run `Main.java`.
-3. Sign in with **admin@rms.local** and password **admin123**, then change the password under **Settings**.
+3. Sign in with the Supabase admin account created during setup.
 4. Add a supplier, then a receipt. Create more accounts (Admin or Encoder) under **Users**.
 
-**Where is my data?** In `RMS-Data` inside your user folder (for example `C:\Users\You\RMS-Data`): `data.json` (everything except files), `data.json.bak` (the previous save) and `attachments/` (scans). Set the environment variable `RMS_DATA_DIR` to use another folder. Back up that folder to back up the app. Only one copy of the app should use the folder at a time.
-
-**Sharing between computers (optional):** follow [SETUP.md](SETUP.md) to use Supabase. When `application.properties` (or the `RMS_SUPABASE_*` variables) is filled in, the app uses Supabase instead of the local folder. Existing local data is not copied across.
+**Importing old local data:** In the signed-in Supabase app, open **Settings → Move existing local data to Supabase**, select the folder containing `data.json`, and confirm. The import is retryable and does not delete local files. Local passwords are not portable to Supabase Auth; recreate accounts under **Users**. Imported activity is attributed to matching Supabase users by email, and receipts to the importing admin.
 
 ## Learn more
 - [ARCHITECTURE.md](ARCHITECTURE.md): how the code and the database fit together.

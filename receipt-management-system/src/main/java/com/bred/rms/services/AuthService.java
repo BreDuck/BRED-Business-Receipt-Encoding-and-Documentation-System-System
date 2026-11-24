@@ -1,6 +1,7 @@
 package com.bred.rms.services;
 
 import com.bred.rms.models.User;
+import com.bred.rms.models.AccountStatus;
 import com.bred.rms.repositories.RepositoryException;
 import com.bred.rms.repositories.UserRepository;
 import com.bred.rms.supabase.AuthClient;
@@ -8,8 +9,11 @@ import com.bred.rms.supabase.Session;
 import com.bred.rms.supabase.SessionManager;
 import com.bred.rms.supabase.SupabaseException;
 
+import java.util.regex.Pattern;
+
 /** Signs users in with Supabase Auth (email + password) and loads their profile and role. */
 public final class AuthService implements AuthApi {
+    private static final Pattern EMAIL = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     private final AuthClient auth;
     private final SessionManager sessions;
     private final UserRepository users;
@@ -35,11 +39,33 @@ public final class AuthService implements AuthApi {
         try {
             User u = users.findById(session.userId()).orElse(null);
             if (u == null) throw fail("This account has no profile yet. Ask an administrator to set it up.");
+            if (u.accountStatus() == AccountStatus.PENDING) throw fail("Your registration is pending administrator approval.");
+            if (u.accountStatus() == AccountStatus.REJECTED) throw fail("Your registration was rejected. Please contact an administrator.");
             if (!u.active()) throw fail("This account is inactive.");
             current = u;
             return u;
         } catch (RepositoryException e) {
             throw fail(e.getMessage());
+        }
+    }
+
+    /** Validates and submits a registration request without creating a local sign-in session. */
+    @Override public void registerAccount(String fullName, String email, java.util.UUID companyId, char[] password) throws AuthException {
+        if (fullName == null || fullName.isBlank()) throw new AuthException("Full name is required.");
+        if (email == null || !EMAIL.matcher(email.trim()).matches()) throw new AuthException("Enter a valid email address.");
+        if (companyId == null) throw new AuthException("Choose a company to apply to.");
+        if (password == null || password.length < 8) throw new AuthException("Password must be at least 8 characters.");
+        boolean letter = false;
+        boolean digit = false;
+        for (char c : password) {
+            letter |= Character.isLetter(c);
+            digit |= Character.isDigit(c);
+        }
+        if (!letter || !digit) throw new AuthException("Password must contain at least one letter and one number.");
+        try {
+            users.registerAccount(fullName.trim(), email.trim(), companyId, password);
+        } catch (RuntimeException e) {
+            throw new AuthException(e.getMessage() == null ? "Registration could not be submitted." : e.getMessage());
         }
     }
 

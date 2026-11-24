@@ -1,0 +1,4 @@
+project_id = "bred"
+
+[functions.register-account]
+verify_jwt = false

@@ -2,6 +2,7 @@ package com.bred.rms.config;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,17 +23,13 @@ public final class AppConfig {
     /** Loads Supabase settings from environment variables, a local properties file, or the classpath. */
     public static AppConfig load() {
         Properties props = new Properties();
-        Path local = Path.of("application.properties");
         try {
-            if (Files.exists(local)) {
-                try (InputStream in = Files.newInputStream(local)) { props.load(in); }
-            } else {
-                try (InputStream in = AppConfig.class.getResourceAsStream("/application.properties")) {
-                    if (in != null) props.load(in);
-                }
+            InputStream source = openProperties();
+            if (source != null) {
+                try (InputStream in = source) { props.load(in); }
             }
         } catch (IOException e) {
-            System.err.println("Could not read application.properties: " + e.getMessage());
+            throw new IllegalStateException("Could not read application.properties: " + e.getMessage(), e);
         }
         String url = firstNonBlank(System.getenv("RMS_SUPABASE_URL"), props.getProperty("supabase.url"));
         String key = firstNonBlank(System.getenv("RMS_SUPABASE_ANON_KEY"), props.getProperty("supabase.anonKey"));
@@ -40,6 +37,24 @@ public final class AppConfig {
             throw new IllegalStateException("A privileged Supabase key was supplied. Use only the public anon/publishable key in the desktop app.");
         }
         return new AppConfig(url.replaceAll("/+$", ""), key);
+    }
+
+    private static InputStream openProperties() throws IOException {
+        Path workingDirectoryFile = Path.of("application.properties");
+        if (Files.isRegularFile(workingDirectoryFile)) return Files.newInputStream(workingDirectoryFile);
+
+        try {
+            Path location = Path.of(AppConfig.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            Path directory = Files.isDirectory(location) ? location : location.getParent();
+            for (int i = 0; directory != null && i < 4; i++, directory = directory.getParent()) {
+                Path candidate = directory.resolve("application.properties");
+                if (Files.isRegularFile(candidate)) return Files.newInputStream(candidate);
+            }
+        } catch (URISyntaxException | SecurityException e) {
+            throw new IOException("Could not locate application.properties beside the application.", e);
+        }
+
+        return AppConfig.class.getResourceAsStream("/application.properties");
     }
 
     /** Builds a config directly from values (used by tests and tools). Rejects privileged keys. */

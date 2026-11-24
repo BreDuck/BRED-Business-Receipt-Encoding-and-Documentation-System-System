@@ -1,6 +1,7 @@
 package com.bred.rms.services;
 
 import com.bred.rms.models.Role;
+import com.bred.rms.models.AccountStatus;
 import com.bred.rms.models.User;
 import com.bred.rms.models.ValidationException;
 import com.bred.rms.repositories.UserRepository;
@@ -44,5 +45,14 @@ public final class UserService {
         Guard.requireAdmin(who, DENIED);
         if (Guard.blank(fullName)) throw new ValidationException("Full name is required.");
         users.update(id, fullName.trim(), role, active);
+    }
+
+    /** Approves or rejects a pending account. */
+    public void reviewRegistration(UUID id, AccountStatus decision) {
+        Guard.requireAdmin(who, DENIED);
+        if (decision != AccountStatus.APPROVED && decision != AccountStatus.REJECTED) {
+            throw new ValidationException("Choose approve or reject.");
+        }
+        users.reviewRegistration(id, decision);
     }
 }

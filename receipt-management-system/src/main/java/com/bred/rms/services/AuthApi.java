@@ -7,6 +7,11 @@ public interface AuthApi {
     /** Signs in with email and password; throws a message meant for people on failure. */
     User login(String email, char[] password) throws AuthException;
 
+    /** Submits a public registration request without signing the user in. */
+    default void registerAccount(String fullName, String email, java.util.UUID companyId, char[] password) throws AuthException {
+        throw new AuthException("Account registration is not available.");
+    }
+
     /** The signed-in user, or null. */
     User current();
 

@@ -25,16 +25,25 @@ end $$;
 create function tests.login(u uuid) returns void language sql as
 $$ select set_config('request.jwt.claim.sub', coalesce(u::text, ''), false) $$;
 grant execute on all functions in schema tests to authenticated;
+grant usage on schema tests to service_role;
+grant execute on all functions in schema tests to service_role;
 
 -- fixtures (as superuser)
 insert into auth.users(id, email) values
   ('a0000000-0000-0000-0000-000000000001', 'admin@x.test'),
   ('e0000000-0000-0000-0000-000000000002', 'enc@x.test'),
-  ('f0000000-0000-0000-0000-000000000003', 'off@x.test');
-insert into profiles(id, full_name, email, role, is_active) values
-  ('a0000000-0000-0000-0000-000000000001', 'Ada Admin', 'admin@x.test', 'admin', true),
-  ('e0000000-0000-0000-0000-000000000002', 'Eli Encoder', 'enc@x.test', 'encoder', true),
-  ('f0000000-0000-0000-0000-000000000003', 'Off Boarded', 'off@x.test', 'encoder', false);
+  ('f0000000-0000-0000-0000-000000000003', 'off@x.test'),
+  ('70000000-0000-0000-0000-000000000004', 'pending@x.test'),
+  ('80000000-0000-0000-0000-000000000005', 'reject@x.test'),
+  ('90000000-0000-0000-0000-000000000006', 'new@x.test');
+insert into companies(id, name, is_active)
+values ('11111111-0000-0000-0000-000000000001', 'Acme Ltd', true);
+insert into profiles(id, full_name, email, role, is_active, account_status) values
+  ('a0000000-0000-0000-0000-000000000001', 'Ada Admin', 'admin@x.test', 'admin', true, 'APPROVED'),
+  ('e0000000-0000-0000-0000-000000000002', 'Eli Encoder', 'enc@x.test', 'encoder', true, 'APPROVED'),
+  ('f0000000-0000-0000-0000-000000000003', 'Off Boarded', 'off@x.test', 'encoder', false, 'APPROVED'),
+  ('70000000-0000-0000-0000-000000000004', 'Pending Person', 'pending@x.test', 'encoder', false, 'PENDING'),
+  ('80000000-0000-0000-0000-000000000005', 'Rejected Person', 'reject@x.test', 'encoder', false, 'REJECTED');
 insert into suppliers(id, business_name, tin) values
   ('11111111-0000-0000-0000-000000000001', 'Acme Hardware', '123-456-789-000'),
   ('11111111-0000-0000-0000-000000000002', 'Beta Supplies', '987-654-321-000');
@@ -55,6 +64,7 @@ set role authenticated;
 
 -- ===== encoder =====
 select tests.login('e0000000-0000-0000-0000-000000000002');
+select tests.expect_true((select count(*) from profiles) = 1, 'encoder can read only their own profile');
 select tests.expect_true((select save_receipt(tests.payload('OR-001', '11111111-0000-0000-0000-000000000001'))) is not null, 'encoder can save a receipt');
 select tests.expect_true((select count(*) from receipt_items) = 2 and (select count(*) from receipt_attachments) = 1, 'items and attachment rows were stored with the receipt');
 select tests.expect_true((select encoded_by from receipts where receipt_no = 'OR-001') = 'e0000000-0000-0000-0000-000000000002', 'encoded_by is the caller');
@@ -85,8 +95,40 @@ select tests.expect_true((select count(*) from receipts) = 0, 'inactive user see
 select tests.expect_error($$select save_receipt(tests.payload('OR-OFF', '11111111-0000-0000-0000-000000000001'))$$, 'not allowed');
 select tests.expect_true((select count(*) from profiles) = 1, 'inactive user can still read only their own profile');
 
+-- ===== pending user =====
+select tests.login('70000000-0000-0000-0000-000000000004');
+select tests.expect_true((select count(*) from profiles) = 1, 'pending user can read only their own profile');
+select tests.expect_true((select count(*) from receipts) = 0, 'pending user sees no receipts');
+select tests.expect_error($$select save_receipt(tests.payload('OR-PENDING', '11111111-0000-0000-0000-000000000001'))$$, 'not allowed');
+
+-- Review operations are service-role-only and transactional.
+reset role;
+set role service_role;
+select tests.expect_error($$select review_account('a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'APPROVE')$$, 'cannot review their own');
+select review_account('a0000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000004', 'APPROVE');
+select review_account('a0000000-0000-0000-0000-000000000001', '80000000-0000-0000-0000-000000000005', 'REJECT');
+select register_account_profile('90000000-0000-0000-0000-000000000006', 'New Applicant',
+  'new@x.test', '11111111-0000-0000-0000-000000000001');
+select tests.expect_true((select account_status = 'PENDING' and not is_active
+  and company_id = '11111111-0000-0000-0000-000000000001' from profiles
+  where id = '90000000-0000-0000-0000-000000000006'),
+  'registration creates a pending encoder profile for the selected company');
+reset role;
+
+set role authenticated;
+select tests.login('70000000-0000-0000-0000-000000000004');
+select tests.expect_true((select account_status from profiles where id = auth.uid()) = 'APPROVED'
+  and (select is_active from profiles where id = auth.uid()), 'approval activates the pending account');
+select tests.expect_true((select count(*) from receipts) > 0, 'approved user can access receipts');
+
+select tests.login('80000000-0000-0000-0000-000000000005');
+select tests.expect_true((select account_status from profiles where id = auth.uid()) = 'REJECTED'
+  and not (select is_active from profiles where id = auth.uid()), 'rejection preserves an inactive rejected account');
+select tests.expect_true((select count(*) from receipts) = 0, 'rejected user sees no receipts');
+
 -- ===== admin =====
 select tests.login('a0000000-0000-0000-0000-000000000001');
+select tests.expect_true((select count(*) from profiles) = 6, 'approved admin can list all account statuses');
 select tests.expect_true((select count(*) from activity_log where action = 'receipt.create') = 2, 'admin sees receipt.create log rows');
 select tests.expect_true((select count(*) from activity_log where action like 'suppliers.%') >= 1, 'supplier changes are logged by trigger');
 select tests.expect_error($$delete from suppliers where id = '11111111-0000-0000-0000-000000000001'$$, 'violates foreign key');

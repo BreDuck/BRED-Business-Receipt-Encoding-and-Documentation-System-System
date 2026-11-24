@@ -11,11 +11,13 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.nio.file.Path;
 import java.util.Arrays;
 
 /** Account details, appearance options and "change my password". */
@@ -24,6 +26,8 @@ public final class SettingsPanel extends JPanel {
     private final JPasswordField confirm = new JPasswordField(20);
     private final JLabel message = new JLabel(" ");
     private final JButton change = new JButton("Change password");
+    private final JButton importLocal = new JButton("Import local data into Supabase");
+    private final JLabel importMessage = new JLabel(" ");
 
     /** Builds the settings screen for the signed-in user. */
     public SettingsPanel(AppContext ctx) {
@@ -32,6 +36,18 @@ public final class SettingsPanel extends JPanel {
         add(heading("Account"));
         add(line(u == null ? "Not signed in" : u.fullName() + " · " + u.email() + " · " + u.role().label()));
         add(line("Data stored in: " + ctx.storageLabel));
+        if (ctx.localDataImporter != null && u != null && u.role() == com.bred.rms.models.Role.ADMIN) {
+            add(Box.createVerticalStrut(12));
+            add(heading("Move existing local data to Supabase"));
+            add(line("Imports suppliers, projects, receipts, attachments and activity history."));
+            add(line("Local passwords cannot be transferred; recreate user accounts in Supabase."));
+            importLocal.setAlignmentX(LEFT_ALIGNMENT);
+            importLocal.addActionListener(e -> chooseLocalDataDirectory(ctx));
+            add(importLocal);
+            importMessage.setAlignmentX(LEFT_ALIGNMENT);
+            importMessage.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
+            add(importMessage);
+        }
         add(Box.createVerticalStrut(20));
         add(heading("Appearance"));
         JButton theme = new JButton(ThemeManager.isDark() ? "Switch to light mode" : "Switch to dark mode");
@@ -115,6 +131,43 @@ public final class SettingsPanel extends JPanel {
             change.setEnabled(true);
             show(e instanceof com.bred.rms.services.AuthException && e.getMessage() != null ? e.getMessage() : UiErrors.friendly(e), true);
         });
+    }
+
+    private void chooseLocalDataDirectory(AppContext ctx) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Select the folder containing data.json");
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        String configured = System.getenv("RMS_DATA_DIR");
+        Path defaultDirectory = configured == null || configured.isBlank()
+                ? Path.of(System.getProperty("user.home"), "RMS-Data")
+                : Path.of(configured.trim());
+        chooser.setSelectedFile(defaultDirectory.toFile());
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+
+        int answer = javax.swing.JOptionPane.showConfirmDialog(this,
+                "This imports data into the current Supabase project. Records with matching IDs are updated. "
+                        + "The local data is not deleted. Continue?",
+                "Import local data", javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.WARNING_MESSAGE);
+        if (answer != javax.swing.JOptionPane.OK_OPTION) return;
+
+        Path directory = chooser.getSelectedFile().toPath();
+        importLocal.setEnabled(false);
+        showImport("Importing local data…", false);
+        BackgroundTask.run(() -> ctx.localDataImporter.importDirectory(directory), result -> {
+            importLocal.setEnabled(true);
+            showImport("Imported " + result.suppliers() + " suppliers, " + result.projects() + " projects, "
+                    + result.receipts() + " receipts, " + result.attachments() + " attachments, and "
+                    + result.activityEntries() + " activity entries. " + result.localUsers()
+                    + " local accounts were not transferred; recreate accounts in Users.", false);
+        }, error -> {
+            importLocal.setEnabled(true);
+            showImport(UiErrors.friendly(error), true);
+        });
+    }
+
+    private void showImport(String text, boolean bad) {
+        importMessage.setForeground(bad ? RmsColors.DANGER : RmsColors.SUCCESS);
+        importMessage.setText(text);
     }
 
     private void show(String text, boolean bad) {

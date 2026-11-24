@@ -19,6 +19,24 @@ public final class SupabaseAttachmentStore implements AttachmentStore {
 
     public SupabaseAttachmentStore(RestClient rest) { this.rest = rest; }
 
+    /** Copies an existing local attachment to a stable Supabase path so repeated imports can be retried safely. */
+    public Attachment importCopy(UUID receiptId, Attachment source, byte[] data) throws AttachmentException {
+        String contentType = AttachmentRules.contentType(source.fileName());
+        String path = source.storagePath();
+        if (contentType == null || data.length > AttachmentRules.MAX_BYTES
+                || !path.startsWith(receiptId + "/")
+                || !path.matches("[A-Za-z0-9._/-]+")
+                || path.contains("../") || path.endsWith("/..")) {
+            throw new AttachmentException("That local attachment cannot be imported.");
+        }
+        try {
+            rest.uploadObject(BUCKET, path, data, contentType, true);
+        } catch (SupabaseException e) {
+            throw new AttachmentException(describe(e, "import"));
+        }
+        return source;
+    }
+
     @Override public Attachment upload(UUID receiptId, Path source) throws AttachmentException {
         AttachmentRules.check(source);
         byte[] data;
