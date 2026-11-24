@@ -21,6 +21,8 @@ class UserServiceTest {
     static final class MemoryUsers implements UserRepository {
         final List<User> data = new ArrayList<>();
         RuntimeException failUpdateWith;
+        UUID deleted;
+        UUID resetSentTo;
         @Override public List<User> findAll() { return new ArrayList<>(data); }
         @Override public Optional<User> findById(UUID id) { return data.stream().filter(u -> u.id().equals(id)).findFirst(); }
         @Override public User create(String email, String fullName, Role role, char[] password) {
@@ -32,6 +34,8 @@ class UserServiceTest {
             if (failUpdateWith != null) throw failUpdateWith;
             data.replaceAll(u -> u.id().equals(id) ? new User(id, fullName, u.email(), role, active) : u);
         }
+        @Override public void delete(UUID id) { deleted = id; }
+        @Override public void sendPasswordReset(UUID id) { resetSentTo = id; }
     }
 
     private final MemoryUsers repo = new MemoryUsers();
@@ -87,5 +91,20 @@ class UserServiceTest {
         repo.failUpdateWith = new RepositoryException("You cannot remove the last active administrator.", false);
         RepositoryException e = assertThrows(RepositoryException.class, () -> svc.update(UUID.randomUUID(), "Ada", Role.ENCODER, true));
         assertEquals("You cannot remove the last active administrator.", e.getMessage());
+    }
+
+    @Test
+    void onlyCreatorCanDeleteAccountsOrSendPasswordResetLinks() {
+        UUID id = UUID.randomUUID();
+        assertThrows(SecurityException.class, () -> as(Fakes.admin()).delete(id));
+        assertThrows(SecurityException.class, () -> as(Fakes.admin()).sendPasswordReset(id));
+
+        User creator = new User(UUID.randomUUID(), "Creator", "creator@x.test", Role.CREATOR, true);
+        as(creator).delete(id);
+        as(creator).sendPasswordReset(id);
+        assertEquals(id, repo.deleted);
+        assertEquals(id, repo.resetSentTo);
+        assertThrows(ValidationException.class, () -> as(creator).delete(creator.id()));
+        assertThrows(ValidationException.class, () -> as(creator).sendPasswordReset(creator.id()));
     }
 }

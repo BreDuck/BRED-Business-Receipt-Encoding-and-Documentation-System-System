@@ -2,9 +2,11 @@ package com.bred.rms.ui.admin;
 
 import com.bred.rms.config.AppContext;
 import com.bred.rms.models.AccountStatus;
+import com.bred.rms.models.Role;
 import com.bred.rms.models.User;
 import com.bred.rms.ui.RefreshablePanel;
 import com.bred.rms.ui.UiErrors;
+import com.bred.rms.ui.components.StyledScrollPane;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.utils.BackgroundTask;
 
@@ -43,24 +45,35 @@ public final class UserManagementPanel extends JPanel implements RefreshablePane
     private final JButton toggle = new JButton("Deactivate");
     private final JButton approve = new JButton("Approve");
     private final JButton reject = new JButton("Reject");
+    private final JButton resetPassword = new JButton("Send reset link");
+    private final JButton delete = new JButton("Delete");
+    private final boolean creator;
     private List<User> shown = new ArrayList<>();
 
     /** Builds the panel and loads accounts. */
     public UserManagementPanel(AppContext ctx) {
         super(new BorderLayout(0, 10));
         this.ctx = ctx;
+        User actor = ctx.currentUser.get();
+        creator = actor != null && actor.role() == Role.CREATOR;
         JButton add = new JButton("Add user");
         add.addActionListener(e -> openForm(null));
         edit.addActionListener(e -> selected().ifPresent(this::openForm));
         toggle.addActionListener(e -> selected().ifPresent(this::toggleActive));
         approve.addActionListener(e -> selected().ifPresent(u -> review(u, AccountStatus.APPROVED)));
         reject.addActionListener(e -> selected().ifPresent(u -> review(u, AccountStatus.REJECTED)));
+        resetPassword.addActionListener(e -> selected().ifPresent(this::sendPasswordReset));
+        delete.addActionListener(e -> selected().ifPresent(this::deleteUser));
         JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         bar.add(add);
         bar.add(edit);
         bar.add(toggle);
         bar.add(approve);
         bar.add(reject);
+        if (creator) {
+            bar.add(resetPassword);
+            bar.add(delete);
+        }
         add(bar, BorderLayout.NORTH);
         table.setRowHeight(28);
         table.setFillsViewportHeight(true);
@@ -72,7 +85,7 @@ public final class UserManagementPanel extends JPanel implements RefreshablePane
                 if (e.getClickCount() == 2) selected().ifPresent(UserManagementPanel.this::openForm);
             }
         });
-        add(new JScrollPane(table), BorderLayout.CENTER);
+        add(new StyledScrollPane(table), BorderLayout.CENTER);
         status.setForeground(RmsColors.SECONDARY_TEXT);
         status.setBorder(BorderFactory.createEmptyBorder(2, 2, 0, 2));
         add(status, BorderLayout.SOUTH);
@@ -114,6 +127,12 @@ public final class UserManagementPanel extends JPanel implements RefreshablePane
         boolean pending = u.isPresent() && u.get().accountStatus() == AccountStatus.PENDING;
         approve.setEnabled(pending);
         reject.setEnabled(pending);
+        if (creator) {
+            boolean otherAccount = u.isPresent() && ctx.currentUser.get() != null
+                    && !u.get().id().equals(ctx.currentUser.get().id());
+            resetPassword.setEnabled(otherAccount);
+            delete.setEnabled(otherAccount);
+        }
     }
 
     private void openForm(User existing) {
@@ -145,6 +164,44 @@ public final class UserManagementPanel extends JPanel implements RefreshablePane
             ctx.users.reviewRegistration(user.id(), decision);
             return Boolean.TRUE;
         }, ignored -> refreshData(), error -> {
+            status.setText(UiErrors.friendly(error));
+            updateButtons();
+        });
+    }
+
+    private void sendPasswordReset(User user) {
+        int answer = JOptionPane.showConfirmDialog(this,
+                "Send a password reset link to " + user.email() + "?\n"
+                        + "The recipient must open the email to choose a new password.",
+                "Send password reset link", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+        if (answer != JOptionPane.YES_OPTION) return;
+        resetPassword.setEnabled(false);
+        BackgroundTask.run(() -> {
+            ctx.users.sendPasswordReset(user.id());
+            return Boolean.TRUE;
+        }, ignored -> {
+            status.setText("Password reset link sent to " + user.email() + ".");
+            updateButtons();
+        }, error -> {
+            status.setText(UiErrors.friendly(error));
+            updateButtons();
+        });
+    }
+
+    private void deleteUser(User user) {
+        int answer = JOptionPane.showConfirmDialog(this,
+                "Permanently delete " + user.fullName() + " (" + user.email() + ")?\n"
+                        + "Their message text will remain in History as a deleted user.",
+                "Delete account", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (answer != JOptionPane.YES_OPTION) return;
+        delete.setEnabled(false);
+        BackgroundTask.run(() -> {
+            ctx.users.delete(user.id());
+            return Boolean.TRUE;
+        }, ignored -> {
+            status.setText("Deleted " + user.email() + ".");
+            refreshData();
+        }, error -> {
             status.setText(UiErrors.friendly(error));
             updateButtons();
         });

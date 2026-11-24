@@ -9,6 +9,7 @@ import com.bred.rms.models.User;
 import com.bred.rms.services.ReceiptQuery;
 import com.bred.rms.ui.RefreshablePanel;
 import com.bred.rms.ui.UiErrors;
+import com.bred.rms.ui.components.StyledScrollPane;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.utils.BackgroundTask;
 
@@ -73,7 +74,7 @@ public final class ProjectPanel extends JPanel implements RefreshablePanel {
                 if (e.getClickCount() == 2) selected().ifPresent(ProjectPanel.this::openForm);
             }
         });
-        add(new JScrollPane(table), BorderLayout.CENTER);
+        add(new StyledScrollPane(table), BorderLayout.CENTER);
         status.setForeground(RmsColors.SECONDARY_TEXT);
         status.setBorder(BorderFactory.createEmptyBorder(2, 2, 0, 2));
         add(status, BorderLayout.SOUTH);

@@ -5,6 +5,7 @@ import com.bred.rms.models.BugReport;
 import com.bred.rms.models.Role;
 import com.bred.rms.models.User;
 import com.bred.rms.ui.components.UserAvatar;
+import com.bred.rms.ui.components.StyledScrollPane;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.theme.ThemeManager;
 import com.bred.rms.utils.BackgroundTask;
@@ -30,14 +31,13 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.imageio.ImageIO;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
 import java.awt.RenderingHints;
 import java.awt.Shape;
 import java.awt.geom.RoundRectangle2D;
@@ -47,6 +47,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.function.Consumer;
 
 /** Account details, appearance options and "change my password". */
 public final class SettingsPanel extends JPanel {
@@ -58,13 +59,16 @@ public final class SettingsPanel extends JPanel {
     private final JLabel importMessage = new JLabel(" ");
     private final JTextField reportTitle = new JTextField(42);
     private final JTextArea reportDescription = new JTextArea(5, 42);
+    private final JLabel reportSubtitle = new JLabel("Tell us what went wrong. A screenshot can help us fix it faster.");
     private final JLabel imageName = new JLabel("No image selected");
+    private final JButton attachImage = new RoundedReportButton("Attach image");
     private final RoundedReportSubmitButton submitReport = new RoundedReportSubmitButton("Submit bug report");
     private final JLabel reportMessage = new JLabel(" ");
     private final JButton viewImage = new JButton("View attached image");
     private final DefaultListModel<BugReport> reports = new DefaultListModel<>();
     private final JList<BugReport> reportList = new JList<>(reports);
     private final JTextArea reportDetails = new JTextArea(5, 42);
+    private final Consumer<Boolean> themeListener = dark -> applyTheme();
     private Path selectedImage;
 
     /** Builds the settings screen for the signed-in user. */
@@ -120,7 +124,52 @@ public final class SettingsPanel extends JPanel {
         add(Box.createVerticalStrut(24));
         addContacts(ctx, u);
         setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+        ThemeManager.addThemeListener(themeListener);
+        applyTheme();
     }
+
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        ThemeManager.addThemeListener(themeListener);
+        applyTheme();
+    }
+
+    @Override
+    public void removeNotify() {
+        ThemeManager.removeThemeListener(themeListener);
+        super.removeNotify();
+    }
+
+    private void applyTheme() {
+        applyTextTheme(this);
+        reportSubtitle.setForeground(RmsColors.SECONDARY_TEXT);
+        imageName.setForeground(RmsColors.SECONDARY_TEXT);
+        reportTitle.setCaretColor(RmsColors.primary());
+        reportDescription.setForeground(RmsColors.text());
+        reportDescription.setCaretColor(RmsColors.primary());
+        reportDetails.setForeground(RmsColors.text());
+        submitReport.setBackground(RmsColors.primaryAccent());
+        submitReport.setForeground(RmsColors.primaryForeground());
+        attachImage.setBackground(RmsColors.surface());
+        attachImage.setForeground(RmsColors.text());
+        repaint();
+    }
+
+    private void applyTextTheme(Component component) {
+        if (component instanceof JLabel label && label != message && label != importMessage
+                && label != reportMessage && label != imageName) {
+            label.setForeground(RmsColors.text());
+        } else if (component instanceof javax.swing.text.JTextComponent text) {
+            text.setForeground(RmsColors.text());
+        } else if (component instanceof JButton button && button != submitReport) {
+            button.setForeground(RmsColors.text());
+        }
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) applyTextTheme(child);
+        }
+    }
+
 
     private void addContacts(AppContext ctx, User user) {
         JPanel contacts = new JPanel(new BorderLayout(0, 12));
@@ -142,12 +191,17 @@ public final class SettingsPanel extends JPanel {
         UserAvatar creatorAvatar = new UserAvatar(76, 54, true);
         creatorAvatar.setProfile("Clark Hilario", "clarkhilario.bread@gmail.com");
         creatorContact.add(creatorAvatar, BorderLayout.WEST);
-        JPanel contactCopy = new JPanel();
+        JTextArea contactCopy = new JTextArea(
+                "Creator: Clark Hilario\nEmail: clarkhilario.bread@gmail.com\nPhone: +639944826590", 5, 28);
+        contactCopy.setEditable(false);
+        contactCopy.setFocusable(false);
+        contactCopy.setLineWrap(true);
+        contactCopy.setWrapStyleWord(false);
         contactCopy.setOpaque(false);
-        contactCopy.setLayout(new BoxLayout(contactCopy, BoxLayout.Y_AXIS));
-        contactCopy.add(line("Creator: Clark Hilario"));
-        contactCopy.add(line("Email: clarkhilario.bread@gmail.com"));
-        contactCopy.add(line("Phone: +639944826590"));
+        contactCopy.setForeground(RmsColors.text());
+        contactCopy.setFont(line("").getFont());
+        contactCopy.setBorder(BorderFactory.createEmptyBorder());
+        contactCopy.setMaximumSize(new Dimension(Integer.MAX_VALUE, contactCopy.getPreferredSize().height));
         creatorContact.add(contactCopy, BorderLayout.CENTER);
         contactColumn.add(creatorContact);
 
@@ -160,7 +214,6 @@ public final class SettingsPanel extends JPanel {
         reportHeading.setForeground(RmsColors.text());
         reportHeading.setFont(reportHeading.getFont().deriveFont(Font.BOLD, 17f));
         reportHeading.setAlignmentX(LEFT_ALIGNMENT);
-        JLabel reportSubtitle = new JLabel("Tell us what went wrong. A screenshot can help us fix it faster.");
         reportSubtitle.setForeground(RmsColors.SECONDARY_TEXT);
         reportSubtitle.setFont(reportSubtitle.getFont().deriveFont(12f));
         reportSubtitle.setAlignmentX(LEFT_ALIGNMENT);
@@ -185,7 +238,7 @@ public final class SettingsPanel extends JPanel {
         reportDescription.setWrapStyleWord(true);
         reportDescription.setOpaque(false);
         reportDescription.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        JScrollPane descriptionScroll = new JScrollPane(reportDescription);
+        JScrollPane descriptionScroll = new StyledScrollPane(reportDescription);
         descriptionScroll.setOpaque(false);
         descriptionScroll.getViewport().setOpaque(false);
         descriptionScroll.setBorder(new RoundedFieldBorder(RmsColors.border(), 14));
@@ -198,13 +251,12 @@ public final class SettingsPanel extends JPanel {
         JPanel imagePicker = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         imagePicker.setOpaque(false);
         imagePicker.setAlignmentX(LEFT_ALIGNMENT);
-        JButton chooseImage = new RoundedReportButton("Attach image");
-        chooseImage.setBackground(RmsColors.surface());
-        chooseImage.setForeground(RmsColors.text());
-        chooseImage.addActionListener(e -> chooseReportImage());
+        attachImage.setBackground(RmsColors.surface());
+        attachImage.setForeground(RmsColors.text());
+        attachImage.addActionListener(e -> chooseReportImage());
         imageName.setForeground(RmsColors.SECONDARY_TEXT);
         imageName.setFont(imageName.getFont().deriveFont(12f));
-        imagePicker.add(chooseImage);
+        imagePicker.add(attachImage);
         imagePicker.add(imageName);
         reportForm.add(imagePicker);
         reportForm.add(Box.createVerticalStrut(12));
@@ -231,7 +283,7 @@ public final class SettingsPanel extends JPanel {
             reportForm.add(Box.createVerticalStrut(6));
             reportForm.add(unavailable);
             submitReport.setEnabled(false);
-            chooseImage.setEnabled(false);
+            attachImage.setEnabled(false);
         }
 
         JPanel reportColumn = new JPanel();
@@ -266,10 +318,10 @@ public final class SettingsPanel extends JPanel {
             reportDetails.setWrapStyleWord(true);
             viewImage.setEnabled(false);
             viewImage.addActionListener(e -> showReportImage(ctx));
-            JScrollPane reportsScroll = new JScrollPane(reportList);
+            JScrollPane reportsScroll = new StyledScrollPane(reportList);
             reportsScroll.setAlignmentX(LEFT_ALIGNMENT);
             reportColumn.add(reportsScroll);
-            JScrollPane detailsScroll = new JScrollPane(reportDetails);
+            JScrollPane detailsScroll = new StyledScrollPane(reportDetails);
             detailsScroll.setAlignmentX(LEFT_ALIGNMENT);
             reportColumn.add(detailsScroll);
             viewImage.setAlignmentX(LEFT_ALIGNMENT);
@@ -277,26 +329,12 @@ public final class SettingsPanel extends JPanel {
             loadReports(ctx);
         }
 
-        JPanel body = new JPanel(new GridBagLayout());
+        JPanel body = new JPanel();
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
         body.setOpaque(false);
-        GridBagConstraints reportConstraints = new GridBagConstraints();
-        reportConstraints.gridx = 0;
-        reportConstraints.gridy = 0;
-        reportConstraints.weightx = 0.72;
-        reportConstraints.weighty = 1;
-        reportConstraints.fill = GridBagConstraints.BOTH;
-        reportConstraints.anchor = GridBagConstraints.NORTHWEST;
-        reportConstraints.insets = new Insets(0, 0, 0, 16);
-        body.add(reportColumn, reportConstraints);
-
-        GridBagConstraints contactConstraints = new GridBagConstraints();
-        contactConstraints.gridx = 1;
-        contactConstraints.gridy = 0;
-        contactConstraints.weightx = 0.28;
-        contactConstraints.weighty = 1;
-        contactConstraints.fill = GridBagConstraints.HORIZONTAL;
-        contactConstraints.anchor = GridBagConstraints.NORTHWEST;
-        body.add(contactColumn, contactConstraints);
+        body.add(reportColumn);
+        body.add(Box.createVerticalStrut(24));
+        body.add(contactColumn);
         contacts.add(body, BorderLayout.CENTER);
         add(contacts);
     }
@@ -373,7 +411,7 @@ public final class SettingsPanel extends JPanel {
                         image.getScaledInstance((int) (image.getWidth() * scale), (int) (image.getHeight() * scale),
                                 java.awt.Image.SCALE_SMOOTH)));
                 JDialog dialog = new JDialog(javax.swing.SwingUtilities.getWindowAncestor(this), "Bug report image");
-                dialog.setContentPane(new JScrollPane(preview));
+                dialog.setContentPane(new StyledScrollPane(preview));
                 dialog.pack();
                 dialog.setLocationRelativeTo(this);
                 dialog.setVisible(true);

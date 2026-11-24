@@ -8,6 +8,7 @@ import com.bred.rms.models.Role;
 import com.bred.rms.models.Supplier;
 import com.bred.rms.models.User;
 import com.bred.rms.ui.RefreshablePanel;
+import com.bred.rms.ui.components.StyledScrollPane;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.utils.BackgroundTask;
 
@@ -72,7 +73,7 @@ public final class ReceiptDetailPanel extends JPanel implements RefreshablePanel
         add(top, BorderLayout.NORTH);
 
         paperHolder.setOpaque(false);
-        JScrollPane scroll = new JScrollPane(paperHolder);
+        JScrollPane scroll = new StyledScrollPane(paperHolder);
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.getVerticalScrollBar().setUnitIncrement(16);
         add(scroll, BorderLayout.CENTER);

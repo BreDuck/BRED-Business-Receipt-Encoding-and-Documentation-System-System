@@ -86,6 +86,9 @@ select tests.expect_error($$insert into receipts(receipt_no, receipt_date, suppl
 select tests.expect_error($$select delete_receipt((select id from receipts limit 1))$$, 'administrator');
 select tests.expect_error($$select admin_update_profile('e0000000-0000-0000-0000-000000000002', 'X', 'admin', true)$$, 'administrator');
 select tests.expect_true((select count(*) from activity_log) = 0, 'encoder cannot read the activity log');
+select tests.expect_error($$select * from creator_message_history()$$, 'Creator role required');
+select tests.expect_error($$select creator_broadcast(array['c0000000-0000-0000-0000-000000000007']::uuid[], 'Notice')$$,
+  'active Creator account is required');
 delete from suppliers where id = '11111111-0000-0000-0000-000000000002';
 select tests.expect_true((select count(*) from suppliers) = 2, 'encoder delete of a supplier removes nothing');
 select tests.expect_true((select count(*) from companies) = 1, 'encoder cannot see another company');
@@ -168,6 +171,30 @@ select tests.expect_true((select count(*) from profiles) = 7, 'Creator can see e
 select tests.expect_true((select count(*) from bug_reports) = 1, 'Creator can see submitted bug reports');
 select tests.expect_true((select count(*) from storage.objects where bucket_id = 'bug-reports') = 1,
   'Creator can view submitted report images');
+update companies set name = 'Beta Ltd Updated'
+where id = '33333333-0000-0000-0000-000000000003';
+select tests.expect_true((select name from companies where id = '33333333-0000-0000-0000-000000000003') = 'Beta Ltd Updated',
+  'Creator can edit a company across company scopes');
+select tests.expect_error($$delete from companies where id = '33333333-0000-0000-0000-000000000003'$$,
+  'violates foreign key');
+select tests.expect_true(creator_broadcast(array[
+  'a0000000-0000-0000-0000-000000000001'::uuid,
+  'e0000000-0000-0000-0000-000000000002'::uuid
+], 'System notice') = 2, 'Creator broadcast is saved once per recipient');
+select tests.expect_true((select count(*) from custom_messages where is_broadcast and body = 'System notice') = 2,
+  'broadcast rows are available to recipients and history');
+insert into custom_messages(recipient_id, body)
+values ('a0000000-0000-0000-0000-000000000001', 'Keep this conversation');
+select tests.expect_true((select recipient_name from creator_message_history()
+  where body = 'Keep this conversation') = 'Ada Admin', 'Creator history includes cross-company chats');
+
+reset role;
+delete from auth.users where id = 'a0000000-0000-0000-0000-000000000001';
+set role authenticated;
+select tests.login('c0000000-0000-0000-0000-000000000007');
+select tests.expect_true((select recipient_id is null and recipient_name = 'Deleted user'
+  and body = 'Keep this conversation' from creator_message_history()
+  where body = 'Keep this conversation'), 'account deletion preserves anonymized chat history');
 
 reset role;
 set role service_role;

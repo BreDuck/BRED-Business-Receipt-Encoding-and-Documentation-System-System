@@ -27,6 +27,16 @@ public interface UserRepository {
     /** Updates name, role and active flag (admin only; the last active admin is protected by the database). */
     void update(UUID id, String fullName, Role role, boolean active);
 
+    /** Permanently deletes an account. Creator-only. */
+    default void delete(UUID id) {
+        throw new RepositoryException("Account deletion is not available.", false);
+    }
+
+    /** Sends a password recovery email for an account. Creator-only. */
+    default void sendPasswordReset(UUID id) {
+        throw new RepositoryException("Password reset emails are not available.", false);
+    }
+
     /** Submits a public registration request. Supabase implementations send it to the register-account function. */
     default void registerAccount(String fullName, String email, Role role, java.util.UUID companyId,
                                  String companyName, char[] password) {

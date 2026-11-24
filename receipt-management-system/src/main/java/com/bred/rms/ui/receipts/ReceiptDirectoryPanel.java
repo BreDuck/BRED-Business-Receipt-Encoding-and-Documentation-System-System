@@ -8,6 +8,7 @@ import com.bred.rms.models.Supplier;
 import com.bred.rms.services.ReceiptQuery;
 import com.bred.rms.ui.RefreshablePanel;
 import com.bred.rms.ui.components.DateField;
+import com.bred.rms.ui.components.StyledScrollPane;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.theme.ThemeManager;
 import com.bred.rms.utils.BackgroundTask;
@@ -113,7 +114,7 @@ public final class ReceiptDirectoryPanel extends JPanel implements RefreshablePa
         table.setFillsViewportHeight(true);
         table.setAutoCreateRowSorter(false);
         table.getTableHeader().setReorderingAllowed(false);
-        add(new JScrollPane(table), BorderLayout.CENTER);
+        add(new StyledScrollPane(table), BorderLayout.CENTER);
         status.setForeground(RmsColors.SECONDARY_TEXT);
         status.setBorder(BorderFactory.createEmptyBorder(2, 2, 0, 2));
         add(status, BorderLayout.SOUTH);

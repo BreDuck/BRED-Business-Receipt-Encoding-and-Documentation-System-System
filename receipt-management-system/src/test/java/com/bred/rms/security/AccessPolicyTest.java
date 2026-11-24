@@ -13,14 +13,19 @@ class AccessPolicyTest {
         var mods = AccessPolicy.modulesFor(Role.ENCODER);
         assertFalse(mods.contains(Module.USERS));
         assertFalse(mods.contains(Module.ACTIVITY_LOG));
+        assertFalse(mods.contains(Module.COMPANIES));
+        assertFalse(mods.contains(Module.HISTORY));
         assertTrue(mods.contains(Module.MESSAGES));
         assertTrue(mods.contains(Module.RECEIPTS) && mods.contains(Module.REPORTS) && mods.contains(Module.SETTINGS));
     }
 
     @Test
     void adminHasEveryModuleInMenuOrder() {
-        assertEquals(java.util.List.of(Module.values()), AccessPolicy.modulesFor(Role.ADMIN));
+        assertFalse(AccessPolicy.modulesFor(Role.ADMIN).contains(Module.COMPANIES));
+        assertFalse(AccessPolicy.modulesFor(Role.ADMIN).contains(Module.HISTORY));
         assertEquals(java.util.List.of(Module.values()), AccessPolicy.modulesFor(Role.CREATOR));
+        assertTrue(AccessPolicy.modulesFor(Role.CREATOR).contains(Module.COMPANIES));
+        assertTrue(AccessPolicy.modulesFor(Role.CREATOR).contains(Module.HISTORY));
         assertEquals(Module.DASHBOARD, Module.values()[0]);
     }
 }

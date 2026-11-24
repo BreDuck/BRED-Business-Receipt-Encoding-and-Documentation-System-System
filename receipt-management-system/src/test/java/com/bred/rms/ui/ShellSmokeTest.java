@@ -5,8 +5,20 @@ import com.bred.rms.models.Role;
 import com.bred.rms.security.Module;
 import com.bred.rms.ui.auth.LoginPanel;
 import com.bred.rms.ui.auth.SetupPanel;
+import com.bred.rms.ui.components.StyledScrollPane;
+import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.theme.ThemeManager;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
+import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.SwingUtilities;
+import javax.swing.JToggleButton;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -37,7 +49,37 @@ class ShellSmokeTest {
     @Test
     void shellForAdminOffersEverything() {
         Shell shell = new Shell(TestContexts.withUser(Role.ADMIN), () -> { });
-        assertEquals(java.util.List.of(Module.values()), shell.visibleModules());
+        assertFalse(shell.visibleModules().contains(Module.COMPANIES));
+        assertFalse(shell.visibleModules().contains(Module.HISTORY));
+        assertTrue(shell.visibleModules().contains(Module.USERS));
+    }
+
+    @Test
+    void shellForCreatorOffersGlobalCompaniesAndHistory() throws Exception {
+        Shell shell = new Shell(TestContexts.withUser(Role.CREATOR), () -> { });
+        assertTrue(shell.visibleModules().contains(Module.USERS));
+        assertTrue(shell.visibleModules().contains(Module.COMPANIES));
+        assertTrue(shell.visibleModules().contains(Module.HISTORY));
+
+        JPanel sidebar = (JPanel) shell.getComponent(0);
+        JScrollPane navigation = java.util.Arrays.stream(sidebar.getComponents())
+                .filter(JScrollPane.class::isInstance)
+                .map(JScrollPane.class::cast)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, navigation.getVerticalScrollBarPolicy());
+        assertEquals(8, navigation.getVerticalScrollBar().getPreferredSize().width);
+
+        JToggleButton companies = navigationButton(shell, Module.COMPANIES);
+        assertTrue(companies.isEnabled());
+        SwingUtilities.invokeAndWait(companies::doClick);
+        assertTrue(companies.isSelected());
+        assertEquals(Module.COMPANIES.title(), shellTitle(shell).getText());
+
+        JToggleButton history = navigationButton(shell, Module.HISTORY);
+        SwingUtilities.invokeAndWait(history::doClick);
+        assertTrue(history.isSelected());
+        assertEquals(Module.HISTORY.title(), shellTitle(shell).getText());
     }
 
     @Test
@@ -52,5 +94,96 @@ class ShellSmokeTest {
         assertEquals(ThemeManager.Appearance.values().length, appearances.getItemCount());
         assertEquals(ThemeManager.Appearance.BREDUCK_SIGNATURE, appearances.getItemAt(1));
         assertEquals(appearances.getPreferredSize(), appearances.getMaximumSize());
+    }
+
+    @Test
+    void styledScrollbarsKeepTheirCustomUiAfterThemeUpdates() throws Exception {
+        ThemeManager.Appearance previousAppearance = ThemeManager.appearance();
+        boolean previousDark = ThemeManager.isDark();
+        try {
+            StyledScrollPane scroll = new StyledScrollPane(new JPanel());
+            Class<?> verticalUi = scroll.getVerticalScrollBar().getUI().getClass();
+            Class<?> horizontalUi = scroll.getHorizontalScrollBar().getUI().getClass();
+
+            ThemeManager.setAppearance(ThemeManager.Appearance.SILVER_LINING);
+            ThemeManager.apply(!previousDark);
+            SwingUtilities.invokeAndWait(scroll::updateUI);
+
+            assertEquals(verticalUi, scroll.getVerticalScrollBar().getUI().getClass());
+            assertEquals(horizontalUi, scroll.getHorizontalScrollBar().getUI().getClass());
+            assertEquals(8, scroll.getVerticalScrollBar().getPreferredSize().width);
+            assertEquals(8, scroll.getHorizontalScrollBar().getPreferredSize().height);
+        } finally {
+            ThemeManager.setAppearance(previousAppearance);
+            ThemeManager.apply(previousDark);
+            SwingUtilities.invokeAndWait(() -> { });
+        }
+    }
+
+    @Test
+    void settingsAndLoginTextStayReadableWithSilverLining() throws Exception {
+        ThemeManager.Appearance previousAppearance = ThemeManager.appearance();
+        boolean previousDark = ThemeManager.isDark();
+        SettingsPanel settings = null;
+        LoginPanel login = null;
+        try {
+            ThemeManager.setAppearance(ThemeManager.Appearance.SILVER_LINING);
+            ThemeManager.apply(true);
+            settings = new SettingsPanel(TestContexts.withUser(Role.ENCODER));
+            login = new LoginPanel((email, password, done) -> { });
+
+            ThemeManager.apply(false);
+            SwingUtilities.invokeAndWait(() -> { });
+            assertEquals(RmsColors.primaryForeground(), settingsSubmitButton(settings).getForeground());
+            assertEquals(Color.WHITE, findLabel(login, "BRED").getForeground());
+            assertEquals(RmsColors.primaryForeground(), loginSignInButton(login).getForeground());
+
+            ThemeManager.apply(true);
+            SwingUtilities.invokeAndWait(() -> { });
+            assertEquals(RmsColors.primaryForeground(), settingsSubmitButton(settings).getForeground());
+            assertEquals(RmsColors.LIGHT_TEXT, findLabel(login, "BRED").getForeground());
+            assertEquals(RmsColors.primaryForeground(), loginSignInButton(login).getForeground());
+        } finally {
+            if (login != null) login.removeNotify();
+            if (settings != null) settings.removeNotify();
+            ThemeManager.setAppearance(previousAppearance);
+            ThemeManager.apply(previousDark);
+            SwingUtilities.invokeAndWait(() -> { });
+        }
+    }
+
+    private static JLabel findLabel(Container parent, String text) {
+        for (Component component : parent.getComponents()) {
+            if (component instanceof JLabel label && text.equals(label.getText())) return label;
+            if (component instanceof Container child) {
+                JLabel match = findLabel(child, text);
+                if (match != null) return match;
+            }
+        }
+        throw new AssertionError("Label not found: " + text);
+    }
+
+    private static JButton settingsSubmitButton(SettingsPanel settings) throws ReflectiveOperationException {
+        var field = SettingsPanel.class.getDeclaredField("submitReport");
+        field.setAccessible(true);
+        return (JButton) field.get(settings);
+    }
+
+    private static JButton loginSignInButton(LoginPanel login) throws ReflectiveOperationException {
+        var field = LoginPanel.class.getDeclaredField("signInButton");
+        field.setAccessible(true);
+        return (JButton) field.get(login);
+    }
+
+    private static JToggleButton navigationButton(Shell shell, Module module) throws ReflectiveOperationException {
+        var field = Shell.class.getDeclaredField("navButtons");
+        field.setAccessible(true);
+        return (JToggleButton) ((Map<?, ?>) field.get(shell)).get(module);
+    }
+
+    private static JLabel shellTitle(Shell shell) throws ReflectiveOperationException {
+        var field = Shell.class.getDeclaredField("title");
+        field.setAccessible(true);
+        return (JLabel) field.get(shell);
     }
 }

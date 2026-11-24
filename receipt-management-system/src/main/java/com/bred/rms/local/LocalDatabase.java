@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.bred.rms.models.ActivityEntry;
 import com.bred.rms.models.Attachment;
 import com.bred.rms.models.ChatMessage;
+import com.bred.rms.models.Company;
 import com.bred.rms.models.Project;
 import com.bred.rms.models.Receipt;
 import com.bred.rms.models.ReceiptItem;
@@ -15,6 +16,7 @@ import com.bred.rms.models.Supplier;
 import com.bred.rms.models.User;
 import com.bred.rms.models.ValidationException;
 import com.bred.rms.repositories.ActivityLogRepository;
+import com.bred.rms.repositories.CompanyRepository;
 import com.bred.rms.repositories.MessageRepository;
 import com.bred.rms.repositories.ProjectRepository;
 import com.bred.rms.repositories.ReceiptRepository;
@@ -63,6 +65,7 @@ public final class LocalDatabase {
 
     private static final class State {
         final List<Account> accounts = new ArrayList<>();
+        final List<Company> companies = new ArrayList<>();
         final List<Supplier> suppliers = new ArrayList<>();
         final List<Project> projects = new ArrayList<>();
         final List<Receipt> receipts = new ArrayList<>();
@@ -228,6 +231,76 @@ public final class LocalDatabase {
                     return null;
                 });
             }
+
+            @Override public void delete(UUID id) {
+                write(s -> {
+                    if (who.get() != null && who.get().id().equals(id)) {
+                        throw new RepositoryException("You cannot delete the signed-in account.", false);
+                    }
+                    Account target = s.accounts.stream().filter(a -> a.user().id().equals(id)).findFirst()
+                            .orElseThrow(() -> new RepositoryException("That user no longer exists.", false));
+                    long protectedAccounts = s.accounts.stream()
+                            .filter(a -> (a.user().role() == Role.ADMIN || a.user().role() == Role.CREATOR)
+                                    && a.user().active()).count();
+                    if ((target.user().role() == Role.ADMIN || target.user().role() == Role.CREATOR)
+                            && target.user().active() && protectedAccounts <= 1) {
+                        throw new RepositoryException("Cannot delete the last active administrator.", false);
+                    }
+                    for (int i = 0; i < s.messages.size(); i++) {
+                        ChatMessage message = s.messages.get(i);
+                        boolean senderDeleted = id.equals(message.senderId());
+                        boolean recipientDeleted = id.equals(message.recipientId());
+                        if (senderDeleted || recipientDeleted) {
+                            s.messages.set(i, new ChatMessage(message.id(), message.senderId(), message.recipientId(),
+                                    message.body(), message.sentAt(), message.broadcast(),
+                                    senderDeleted ? "Deleted user" : message.senderName(),
+                                    senderDeleted ? "" : message.senderEmail(),
+                                    recipientDeleted ? "Deleted user" : message.recipientName()));
+                        }
+                    }
+                    s.accounts.remove(target);
+                    log(s, "user.delete", target.user().email());
+                    return null;
+                });
+            }
+        };
+    }
+
+    /** Companies in local mode are persisted independently from receipt data. */
+    public CompanyRepository companies() {
+        return new CompanyRepository() {
+            @Override public List<Company> findAll() {
+                return read(s -> s.companies.stream()
+                        .sorted(Comparator.comparing(Company::name, String.CASE_INSENSITIVE_ORDER))
+                        .toList());
+            }
+
+            @Override public void update(UUID id, String name) {
+                write(s -> {
+                    int index = -1;
+                    for (int i = 0; i < s.companies.size(); i++) {
+                        Company company = s.companies.get(i);
+                        if (company.id().equals(id)) index = i;
+                        else if (norm(company.name()).equals(norm(name))) {
+                            throw new RepositoryException("A company with that name already exists.", false);
+                        }
+                    }
+                    if (index < 0) throw new RepositoryException("That company no longer exists.", false);
+                    s.companies.set(index, new Company(id, name.trim()));
+                    log(s, "company.update", name.trim());
+                    return null;
+                });
+            }
+
+            @Override public void delete(UUID id) {
+                write(s -> {
+                    Company company = s.companies.stream().filter(value -> value.id().equals(id)).findFirst()
+                            .orElseThrow(() -> new RepositoryException("That company no longer exists.", false));
+                    s.companies.remove(company);
+                    log(s, "company.delete", company.name());
+                    return null;
+                });
+            }
         };
     }
 
@@ -354,6 +427,15 @@ public final class LocalDatabase {
                         .toList());
             }
 
+            @Override public List<ChatMessage> findHistory() {
+                if (who.get() == null || who.get().role() != Role.CREATOR) {
+                    throw new SecurityException("Only the Creator can view global message history.");
+                }
+                return read(s -> s.messages.stream()
+                        .sorted(Comparator.comparing(ChatMessage::sentAt).reversed().thenComparing(ChatMessage::id))
+                        .toList());
+            }
+
             @Override public ChatMessage send(UUID recipientId, String body) {
                 String text = body == null ? "" : body.trim();
                 if (text.isEmpty()) throw new RepositoryException("Write a message before sending.", false);
@@ -375,10 +457,54 @@ public final class LocalDatabase {
                     if (!sameCompany && sender.role() != Role.CREATOR && recipient.role() != Role.CREATOR) {
                         throw new RepositoryException("You can only message users in your company.", false);
                     }
-                    ChatMessage message = new ChatMessage(UUID.randomUUID(), sender.id(), recipient.id(), text, Instant.now());
+                    ChatMessage message = new ChatMessage(UUID.randomUUID(), sender.id(), recipient.id(), text,
+                            Instant.now(), false, sender.fullName(), sender.email(), recipient.fullName());
                     s.messages.add(message);
                     return message;
                 });
+            }
+
+            @Override public int sendBroadcast(List<UUID> recipientIds, String body) {
+                String text = body == null ? "" : body.trim();
+                if (text.isEmpty()) throw new RepositoryException("Write a message before sending.", false);
+                if (text.length() > 4000) {
+                    throw new RepositoryException("Messages can be up to 4000 characters.", false);
+                }
+                return write(s -> {
+                    User sender = who.get();
+                    if (sender == null || sender.role() != Role.CREATOR || !sender.active()) {
+                        throw new SecurityException("Only the Creator can send broadcasts.");
+                    }
+                    if (recipientIds == null || recipientIds.isEmpty()) {
+                        throw new RepositoryException("Choose at least one recipient.", false);
+                    }
+                    List<UUID> distinct = recipientIds.stream().distinct().toList();
+                    if (distinct.size() != recipientIds.size()) {
+                        throw new RepositoryException("The recipient list contains duplicates.", false);
+                    }
+                    List<User> recipients = distinct.stream().map(id -> s.accounts.stream()
+                            .map(Account::user)
+                            .filter(u -> u.id().equals(id) && u.active())
+                            .findFirst()
+                            .orElseThrow(() -> new RepositoryException("Every recipient must be an active account.", false)))
+                            .toList();
+                    if (recipients.stream().anyMatch(u -> u.id().equals(sender.id()))) {
+                        throw new RepositoryException("The Creator cannot be a broadcast recipient.", false);
+                    }
+                    for (User recipient : recipients) {
+                        s.messages.add(new ChatMessage(UUID.randomUUID(), sender.id(), recipient.id(), text,
+                                Instant.now(), true, sender.fullName(), sender.email(), recipient.fullName()));
+                    }
+                    return recipients.size();
+                });
+            }
+
+            @Override public List<ChatMessage> findBroadcastsFor(UUID userId, Instant since) {
+                if (userId == null || since == null) return List.of();
+                return read(s -> s.messages.stream().filter(ChatMessage::broadcast)
+                        .filter(message -> userId.equals(message.recipientId()) && !message.sentAt().isBefore(since))
+                        .sorted(Comparator.comparing(ChatMessage::sentAt).thenComparing(ChatMessage::id))
+                        .toList());
             }
         };
     }
@@ -406,13 +532,23 @@ public final class LocalDatabase {
 
     private State load() {
         State s = new State();
-        if (!Files.exists(file)) return s;
+        if (!Files.exists(file)) {
+            s.companies.add(new Company(UUID.randomUUID(), "Local Company"));
+            return s;
+        }
         try {
             JsonNode root = SupabaseHttp.JSON.readTree(Files.readAllBytes(file));
             if (root == null || !root.isObject()) throw new IOException("not a data file");
             for (JsonNode n : root.path("users")) {
                 s.accounts.add(new Account(new User(UUID.fromString(n.path("id").asText()), n.path("fullName").asText(), n.path("email").asText(),
                         Role.fromDb(n.path("role").asText()), n.path("active").asBoolean(true)), n.path("salt").asText(), n.path("hash").asText()));
+            }
+            if (root.has("companies")) {
+                for (JsonNode n : root.path("companies")) {
+                    s.companies.add(new Company(UUID.fromString(n.path("id").asText()), n.path("name").asText()));
+                }
+            } else {
+                s.companies.add(new Company(UUID.randomUUID(), "Local Company"));
             }
             for (JsonNode n : root.path("suppliers")) {
                 s.suppliers.add(new Supplier(UUID.fromString(n.path("id").asText()), n.path("businessName").asText(), n.path("tin").asText(),
@@ -427,9 +563,24 @@ public final class LocalDatabase {
                         n.path("action").asText(), n.path("detail").asText()));
             }
             for (JsonNode n : root.path("messages")) {
+                UUID senderId = uuidOrNull(n.path("senderId"));
+                UUID recipientId = uuidOrNull(n.path("recipientId"));
+                String senderName = n.path("senderName").asText("");
+                String senderEmail = n.path("senderEmail").asText("");
+                String recipientName = n.path("recipientName").asText("");
+                if (senderName.isEmpty() && senderId != null) {
+                    User sender = s.accounts.stream().map(Account::user).filter(u -> u.id().equals(senderId))
+                            .findFirst().orElse(null);
+                    senderName = sender == null ? "Deleted user" : sender.fullName();
+                    senderEmail = sender == null ? "" : sender.email();
+                }
+                if (recipientName.isEmpty() && recipientId != null) {
+                    recipientName = s.accounts.stream().map(Account::user).filter(u -> u.id().equals(recipientId))
+                            .map(User::fullName).findFirst().orElse("Deleted user");
+                }
                 s.messages.add(new ChatMessage(UUID.fromString(n.path("id").asText()),
-                        UUID.fromString(n.path("senderId").asText()), UUID.fromString(n.path("recipientId").asText()),
-                        n.path("body").asText(), Instant.parse(n.path("sentAt").asText())));
+                        senderId, recipientId, n.path("body").asText(), Instant.parse(n.path("sentAt").asText()),
+                        n.path("broadcast").asBoolean(false), senderName, senderEmail, recipientName));
             }
             return s;
         } catch (IOException | RuntimeException e) {
@@ -461,6 +612,10 @@ public final class LocalDatabase {
             User u = a.user();
             users.addObject().put("id", u.id().toString()).put("fullName", u.fullName()).put("email", u.email())
                     .put("role", u.role().dbValue()).put("active", u.active()).put("salt", a.salt()).put("hash", a.hash());
+        }
+        ArrayNode companies = root.putArray("companies");
+        for (Company company : state.companies) {
+            companies.addObject().put("id", company.id().toString()).put("name", company.name());
         }
         ArrayNode suppliers = root.putArray("suppliers");
         for (Supplier s : state.suppliers) {
@@ -496,8 +651,12 @@ public final class LocalDatabase {
         }
         ArrayNode messages = root.putArray("messages");
         for (ChatMessage m : state.messages) {
-            messages.addObject().put("id", m.id().toString()).put("senderId", m.senderId().toString())
-                    .put("recipientId", m.recipientId().toString()).put("body", m.body()).put("sentAt", m.sentAt().toString());
+            ObjectNode n = messages.addObject().put("id", m.id().toString()).put("body", m.body())
+                    .put("sentAt", m.sentAt().toString()).put("broadcast", m.broadcast())
+                    .put("senderName", m.senderName()).put("senderEmail", m.senderEmail())
+                    .put("recipientName", m.recipientName());
+            if (m.senderId() != null) n.put("senderId", m.senderId().toString());
+            if (m.recipientId() != null) n.put("recipientId", m.recipientId().toString());
         }
         try {
             byte[] bytes = SupabaseHttp.JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root).getBytes(StandardCharsets.UTF_8);

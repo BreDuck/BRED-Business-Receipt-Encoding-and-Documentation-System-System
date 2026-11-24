@@ -59,6 +59,23 @@ public final class RestClient {
         return authed(t -> http.send("POST", "/rest/v1/rpc/" + function, body, t, null));
     }
 
+    /** Pages through an RPC that returns a table, including results beyond the server's row cap. */
+    public List<JsonNode> rpcAll(String function, Object args) throws SupabaseException {
+        String body = args == null ? "{}" : SupabaseHttp.toJson(args);
+        List<JsonNode> all = new ArrayList<>();
+        for (int offset = 0; ; offset += PAGE) {
+            int start = offset;
+            JsonNode page = authed(t -> http.send("POST", "/rest/v1/rpc/" + function, body, t,
+                    Map.of("Range", start + "-" + (start + PAGE - 1))));
+            if (!page.isArray()) {
+                throw new SupabaseException(-1, "The server returned an invalid RPC result.");
+            }
+            page.forEach(all::add);
+            if (page.size() < PAGE) break;
+        }
+        return all;
+    }
+
     /** Invokes a Supabase Edge Function with the supplied request body. */
     public JsonNode invokeFunction(String function, Object args) throws SupabaseException {
         String body = args == null ? "{}" : SupabaseHttp.toJson(args);

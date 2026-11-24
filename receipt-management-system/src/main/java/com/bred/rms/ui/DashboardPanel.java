@@ -6,6 +6,7 @@ import com.bred.rms.models.ReceiptMath;
 import com.bred.rms.models.Supplier;
 import com.bred.rms.services.ReportService;
 import com.bred.rms.ui.components.StatCard;
+import com.bred.rms.ui.components.StyledScrollPane;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.utils.BackgroundTask;
 
@@ -74,7 +75,7 @@ public final class DashboardPanel extends JPanel implements RefreshablePanel {
         JPanel lower = new JPanel(new BorderLayout());
         lower.setOpaque(false);
         lower.add(heading, BorderLayout.NORTH);
-        lower.add(new JScrollPane(table), BorderLayout.CENTER);
+        lower.add(new StyledScrollPane(table), BorderLayout.CENTER);
         status.setForeground(RmsColors.SECONDARY_TEXT);
         lower.add(status, BorderLayout.SOUTH);
         add(lower, BorderLayout.CENTER);

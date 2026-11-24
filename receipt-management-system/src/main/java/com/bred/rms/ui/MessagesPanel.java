@@ -2,7 +2,9 @@ package com.bred.rms.ui;
 
 import com.bred.rms.config.AppContext;
 import com.bred.rms.models.ChatMessage;
+import com.bred.rms.models.Role;
 import com.bred.rms.models.User;
+import com.bred.rms.ui.components.StyledScrollPane;
 import com.bred.rms.ui.components.UserAvatar;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.theme.ThemeManager;
@@ -65,7 +67,7 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
     private final JList<User> contactList = new JList<>(contactModel);
     private final JTextField search = new JTextField();
     private final JPanel messageList = new JPanel();
-    private final JScrollPane messageScroll = new JScrollPane(messageList);
+    private final JScrollPane messageScroll = new StyledScrollPane(messageList);
     private final JTextArea composer = new JTextArea(3, 24);
     private final JButton sendButton = new JButton("Send");
     private final RoundedSurface composerSurface = new RoundedSurface();
@@ -159,15 +161,21 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
         labels.add(Box.createVerticalStrut(4));
         labels.add(status);
 
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        actions.setOpaque(false);
+        if (ctx.currentUser.get() != null && ctx.currentUser.get().role() == Role.CREATOR) {
+            JButton broadcast = new JButton("Broadcast…");
+            broadcast.addActionListener(event -> new BroadcastDialog(
+                    SwingUtilities.getWindowAncestor(this), ctx).setVisible(true));
+            actions.add(broadcast);
+        }
         JButton refresh = new JButton("Refresh");
         refresh.setMargin(new Insets(6, 12, 6, 12));
         refresh.setPreferredSize(new Dimension(refresh.getPreferredSize().width, 36));
         refresh.addActionListener(e -> refreshData());
-        JPanel refreshHolder = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-        refreshHolder.setOpaque(false);
-        refreshHolder.add(refresh);
+        actions.add(refresh);
         header.add(labels, BorderLayout.WEST);
-        header.add(refreshHolder, BorderLayout.EAST);
+        header.add(actions, BorderLayout.EAST);
         return header;
     }
 
@@ -195,7 +203,7 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
         peopleTop.add(peopleHeader, BorderLayout.NORTH);
         peopleTop.add(search, BorderLayout.CENTER);
         people.add(peopleTop, BorderLayout.NORTH);
-        JScrollPane contactsScroll = new JScrollPane(contactList);
+        JScrollPane contactsScroll = new StyledScrollPane(contactList);
         contactsScroll.setBorder(null);
         contactsScroll.setOpaque(false);
         contactsScroll.getViewport().setOpaque(false);
@@ -245,7 +253,7 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
         composer.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
         composer.setFont(composer.getFont().deriveFont(13f));
         composer.setToolTipText("Write a message. Press Enter to send; Shift+Enter for a new line.");
-        JScrollPane composerScroll = new JScrollPane(composer);
+        JScrollPane composerScroll = new StyledScrollPane(composer);
         composerScroll.setBorder(null);
         composerScroll.setOpaque(false);
         composerScroll.getViewport().setOpaque(false);
@@ -405,6 +413,10 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
         boolean mine = me != null && me.equals(message.senderId());
         JPanel row = new JPanel(new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 0, 0));
         row.setOpaque(false);
+        User sender = mine ? ctx.currentUser.get() : null;
+        UserAvatar avatar = new UserAvatar(34, 32, false);
+        avatar.setProfile(sender == null ? message.senderName() : sender.fullName(),
+                sender == null ? message.senderEmail() : avatarEmail(sender));
         JPanel bubble = new JPanel(new BorderLayout(0, 5)) {
             @Override protected void paintComponent(Graphics graphics) {
                 Graphics2D g = (Graphics2D) graphics.create();
@@ -432,8 +444,21 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
         time.setForeground(RmsColors.SECONDARY_TEXT);
         bubble.add(body, BorderLayout.CENTER);
         bubble.add(time, BorderLayout.SOUTH);
+        if (!mine) {
+            row.add(avatar);
+            row.add(Box.createHorizontalStrut(8));
+        }
         row.add(bubble);
+        if (mine) {
+            row.add(Box.createHorizontalStrut(8));
+            row.add(avatar);
+        }
         return row;
+    }
+
+    private static String avatarEmail(User user) {
+        return user.email().isBlank() && user.role() == Role.CREATOR
+                ? "clarkhilario.bread@gmail.com" : user.email();
     }
 
     private void sendMessage() {
@@ -526,7 +551,7 @@ public final class MessagesPanel extends JPanel implements RefreshablePanel {
             name.setForeground(RmsColors.text());
             detail.setText(user.role().label());
             detail.setForeground(RmsColors.SECONDARY_TEXT);
-            avatar.setProfile(user.fullName(), user.email());
+            avatar.setProfile(user.fullName(), avatarEmail(user));
             setBackground(selected ? RmsColors.primaryLight() : new Color(0, 0, 0, 0));
             return this;
         }

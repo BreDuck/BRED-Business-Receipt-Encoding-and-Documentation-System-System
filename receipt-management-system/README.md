@@ -13,12 +13,15 @@ starting the app (see [SETUP.md](SETUP.md)). Existing local data can be imported
 - **Suppliers and Projects**: business name, TIN, address, contact; project name, code, fund source, with total spend per project.
 - **Dashboard and Reports**: this month's receipts and spend, recent receipts, totals by project, supplier or month, CSV export.
 - **Users and Activity Log** (admins): create accounts, change roles, deactivate people, see who changed what.
+- **Creator tools**: view all accounts and companies, edit and delete accounts/companies, send password reset links,
+  inspect cross-company chat history, and broadcast persistent messages with profile-picture toasts.
 
 ## Roles
 | Role | Can do |
 |---|---|
 | Admin | Everything, including deleting receipts, managing users and reading the activity log |
 | Encoder | Add and edit receipts, suppliers and projects; view the dashboard and reports. No deleting, no Users, no Activity Log |
+| Creator | Global account and company management, password reset emails, all chat history and broadcasts |
 
 Anyone may submit a **Create Account** request from the sign-in screen. New accounts remain pending and cannot access BRED
 until an administrator approves them in **Users**. An administrator may also continue to create accounts directly.

@@ -434,9 +434,13 @@ public final class LoginPanel extends JLayeredPane {
         signInButton.setFocusPainted(false);
         passwordToggle.repaint();
 
-        for (java.awt.Component component : card.getComponents()) {
-            applyTextTheme(component, dark);
-        }
+        Color brandForeground = contrastingText(RmsColors.primary());
+        Color mutedBrandForeground = new Color(brandForeground.getRed(), brandForeground.getGreen(),
+                brandForeground.getBlue(), 190);
+        applyBrandTextTheme(brandPanel, brandForeground, mutedBrandForeground);
+        applyFormTextTheme(formPanel);
+        hintLabel.setForeground(RmsColors.SECONDARY_TEXT);
+        updateMessageTheme(dark);
         revalidate();
         repaint();
     }
@@ -447,16 +451,60 @@ public final class LoginPanel extends JLayeredPane {
                 BorderFactory.createEmptyBorder(0, 12, 0, 12));
     }
 
-    private void applyTextTheme(java.awt.Component component, boolean dark) {
+    private void applyBrandTextTheme(java.awt.Component component, Color foreground, Color mutedForeground) {
         if (component instanceof JLabel label) {
-            if (!Color.WHITE.equals(label.getForeground()) && label.getName() == null
-                    && label != hintLabel && label != messageLabel) {
-                label.setForeground(RmsColors.text());
-            }
+            label.setForeground("brandMuted".equals(label.getName()) ? mutedForeground : foreground);
         } else if (component instanceof java.awt.Container container) {
             for (java.awt.Component child : container.getComponents()) {
-                applyTextTheme(child, dark);
+                applyBrandTextTheme(child, foreground, mutedForeground);
             }
+        }
+    }
+
+    private void applyFormTextTheme(java.awt.Component component) {
+        if (component instanceof JLabel label && label != hintLabel && label != messageLabel) {
+            label.setForeground(RmsColors.text());
+        } else if (component instanceof java.awt.Container container) {
+            for (java.awt.Component child : container.getComponents()) {
+                applyFormTextTheme(child);
+            }
+        }
+    }
+
+    private static Color contrastingText(Color background) {
+        Color darkText = RmsColors.LIGHT_TEXT;
+        return contrastRatio(darkText, background) >= contrastRatio(Color.WHITE, background)
+                ? darkText : Color.WHITE;
+    }
+
+    private static double contrastRatio(Color first, Color second) {
+        double lighter = Math.max(relativeLuminance(first), relativeLuminance(second));
+        double darker = Math.min(relativeLuminance(first), relativeLuminance(second));
+        return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    private static double relativeLuminance(Color color) {
+        double red = linearize(color.getRed() / 255.0);
+        double green = linearize(color.getGreen() / 255.0);
+        double blue = linearize(color.getBlue() / 255.0);
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+    }
+
+    private static double linearize(double channel) {
+        return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+    }
+
+    private static boolean isDangerColor(Color color) {
+        return RmsColors.DANGER.equals(color);
+    }
+
+    private void updateMessageTheme(boolean dark) {
+        if (messageLabel.getText().isBlank()) {
+            messageLabel.setForeground(RmsColors.text());
+        } else if (isDangerColor(messageLabel.getForeground())) {
+            messageLabel.setForeground(RmsColors.DANGER);
+        } else {
+            messageLabel.setForeground(dark ? RmsColors.DARK_TEXT : RmsColors.SECONDARY_TEXT);
         }
     }
 

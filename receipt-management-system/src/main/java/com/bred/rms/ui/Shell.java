@@ -2,15 +2,19 @@ package com.bred.rms.ui;
 
 import com.bred.rms.config.AppContext;
 import com.bred.rms.models.Role;
+import com.bred.rms.models.ChatMessage;
 import com.bred.rms.models.User;
 import com.bred.rms.security.AccessPolicy;
 import com.bred.rms.security.Module;
 import com.bred.rms.ui.components.StatusBadge;
 import com.bred.rms.ui.components.SurfacePanel;
+import com.bred.rms.ui.components.StyledScrollPane;
 import com.bred.rms.ui.components.UserAvatar;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.admin.ActivityLogPanel;
 import com.bred.rms.ui.admin.UserManagementPanel;
+import com.bred.rms.ui.CompanyPanel;
+import com.bred.rms.ui.HistoryPanel;
 import com.bred.rms.ui.lookups.ProjectPanel;
 import com.bred.rms.ui.lookups.SupplierPanel;
 import com.bred.rms.ui.receipts.ReceiptDetailPanel;
@@ -18,6 +22,7 @@ import com.bred.rms.ui.reports.ReportsPanel;
 import com.bred.rms.ui.receipts.ReceiptDirectoryPanel;
 import com.bred.rms.ui.receipts.ReceiptFormDialog;
 import com.bred.rms.ui.theme.ThemeManager;
+import com.bred.rms.utils.BackgroundTask;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -27,6 +32,7 @@ import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JToggleButton;
 import javax.swing.SwingUtilities;
@@ -47,6 +53,12 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.Queue;
+import java.util.Set;
+import java.time.Instant;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 /** The signed-in frame: sidebar menu (filtered by role), header with user info, and the active screen. */
@@ -64,6 +76,13 @@ public final class Shell extends JPanel {
     private NavListPanel navList;
     private ReceiptDirectoryPanel directory;
     private ReceiptDetailPanel detail;
+    private final Timer broadcastPollTimer = new Timer(2500, event -> pollBroadcasts());
+    private final Queue<ChatMessage> pendingBroadcasts = new LinkedList<>();
+    private final Set<UUID> seenBroadcastIds = new HashSet<>();
+    private final Instant broadcastPollStart = Instant.now().minusMillis(100);
+    private Instant broadcastCursor = broadcastPollStart;
+    private boolean broadcastPollActive;
+    private boolean broadcastToastVisible;
 
     public Shell(AppContext ctx, Runnable onSignOut) {
         super(new BorderLayout());
@@ -71,6 +90,7 @@ public final class Shell extends JPanel {
         User user = ctx.currentUser.get();
         Role role = user == null ? Role.ENCODER : user.role();
         this.modules = AccessPolicy.modulesFor(role);
+        broadcastPollTimer.setCoalesce(true);
 
         add(buildSidebar(user), BorderLayout.WEST);
         JPanel right = new JPanel(new BorderLayout());
@@ -85,10 +105,13 @@ public final class Shell extends JPanel {
     public void addNotify() {
         super.addNotify();
         ThemeManager.addThemeListener(themeListener);
+        if (userIsRecipient()) broadcastPollTimer.start();
     }
 
     @Override
     public void removeNotify() {
+        broadcastPollTimer.stop();
+        pendingBroadcasts.clear();
         ThemeManager.removeThemeListener(themeListener);
         super.removeNotify();
     }
@@ -127,8 +150,10 @@ public final class Shell extends JPanel {
             case REPORTS -> new ReportsPanel(ctx);
             case USERS -> new UserManagementPanel(ctx);
             case ACTIVITY_LOG -> new ActivityLogPanel(ctx);
+            case COMPANIES -> new CompanyPanel(ctx);
+            case HISTORY -> new HistoryPanel(ctx);
             case SETTINGS -> {
-                JScrollPane scroll = new JScrollPane(new SettingsPanel(ctx));
+                JScrollPane scroll = new StyledScrollPane(new SettingsPanel(ctx));
                 scroll.getVerticalScrollBar().setUnitIncrement(40);
                 yield scroll;
             }
@@ -164,6 +189,48 @@ public final class Shell extends JPanel {
             if (directory != null) directory.refreshData();
             openReceipt(saved.id());
         }).setVisible(true);
+    }
+
+    private boolean userIsRecipient() {
+        User user = ctx.currentUser.get();
+        return user != null && user.active() && user.role() != Role.CREATOR;
+    }
+
+    private void pollBroadcasts() {
+        User user = ctx.currentUser.get();
+        if (!userIsRecipient() || broadcastPollActive) return;
+        broadcastPollActive = true;
+        BackgroundTask.run(() -> ctx.messages.findBroadcastsFor(user.id(), broadcastCursor), messages -> {
+            broadcastPollActive = false;
+            for (ChatMessage message : messages) {
+                if (message.sentAt().isBefore(broadcastPollStart)) continue;
+                if (message.sentAt().isAfter(broadcastCursor)) {
+                    broadcastCursor = message.sentAt();
+                    seenBroadcastIds.clear();
+                }
+                if (seenBroadcastIds.add(message.id())) pendingBroadcasts.add(message);
+            }
+            showNextBroadcast();
+        }, error -> {
+            broadcastPollActive = false;
+            broadcastPollTimer.stop();
+            javax.swing.JOptionPane.showMessageDialog(this,
+                    "Broadcast notifications stopped: " + UiErrors.friendly(error),
+                    "Broadcast notifications", javax.swing.JOptionPane.ERROR_MESSAGE);
+        });
+    }
+
+    private void showNextBroadcast() {
+        if (broadcastToastVisible || pendingBroadcasts.isEmpty()) return;
+        ChatMessage message = pendingBroadcasts.remove();
+        broadcastToastVisible = true;
+        BroadcastToast toast = new BroadcastToast(SwingUtilities.getWindowAncestor(this), message.senderName(),
+                message.senderEmail(),
+                message.body(), closed -> {
+                    broadcastToastVisible = false;
+                    showNextBroadcast();
+                });
+        toast.showToast();
     }
 
     private JComponent buildSidebar(User user) {
@@ -218,7 +285,22 @@ public final class Shell extends JPanel {
             navList.addButton(b);
         }
         navList.setAlignmentX(LEFT_ALIGNMENT);
-        side.add(navList);
+        JScrollPane navScroll = new StyledScrollPane(navList);
+        navScroll.setName("sidebarNavigationScroll");
+        navScroll.setBorder(BorderFactory.createEmptyBorder());
+        navScroll.setOpaque(false);
+        navScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        navScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        navScroll.getViewport().setOpaque(false);
+        navScroll.setPreferredSize(new Dimension(216, Math.min(modules.size() * 56, 440)));
+        navScroll.setMinimumSize(new Dimension(216, 72));
+        navScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        navScroll.setAlignmentX(LEFT_ALIGNMENT);
+
+        JScrollBar navBar = navScroll.getVerticalScrollBar();
+        navBar.setUnitIncrement(42);
+        navBar.setBlockIncrement(168);
+        side.add(navScroll);
         side.add(Box.createVerticalGlue());
         return side;
     }
@@ -280,6 +362,7 @@ public final class Shell extends JPanel {
         private void select(int index) {
             if (index < 0 || index >= buttons.size()) return;
             targetY = index * (ROW_HEIGHT + ROW_GAP);
+            scrollRectToVisible(new java.awt.Rectangle(0, (int) targetY, getWidth(), ROW_HEIGHT));
             if (y < 0) {
                 y = targetY;
                 repaint();

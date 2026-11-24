@@ -53,6 +53,24 @@ public final class UserService {
         users.update(id, fullName.trim(), role, active);
     }
 
+    /** Permanently deletes an account while retaining anonymized message history. */
+    public void delete(UUID id) {
+        requireCreator();
+        if (id == null) throw new ValidationException("Choose an account.");
+        if (id.equals(who.get().id())) throw new ValidationException("The Creator cannot delete their own account.");
+        users.delete(id);
+    }
+
+    /** Requests an email-based password recovery for an account without current-password verification. */
+    public void sendPasswordReset(UUID id) {
+        requireCreator();
+        if (id == null) throw new ValidationException("Choose an account.");
+        if (id.equals(who.get().id())) {
+            throw new ValidationException("Use Settings to change the Creator's own password.");
+        }
+        users.sendPasswordReset(id);
+    }
+
     /** Approves or rejects a pending account. */
     public void reviewRegistration(UUID id, AccountStatus decision) {
         Guard.requireAdmin(who, DENIED);
@@ -60,5 +78,11 @@ public final class UserService {
             throw new ValidationException("Choose approve or reject.");
         }
         users.reviewRegistration(id, decision);
+    }
+
+    private void requireCreator() {
+        if (who.get() == null || !who.get().active() || who.get().role() != Role.CREATOR) {
+            throw new SecurityException("Only the Creator can manage all accounts.");
+        }
     }
 }

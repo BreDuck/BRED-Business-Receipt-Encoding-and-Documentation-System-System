@@ -20,9 +20,13 @@ and Maven on the computer that runs the app.
    8. `008_company_scope_and_contacts.sql`: company-scoped data, private bug reports, and their Storage bucket
    9. `009_creator_account.sql`: assigns `clarkhilario.bread@gmail.com` to the protected Creator role
    10. `010_custom_messages.sql`: private direct messages and company-aware teammate contacts
+   11. `011_creator_management_and_broadcasts.sql`: Creator company controls, deleted-account message retention, global history and broadcasts
 
    Migration 008 creates a `Legacy Company` only when needed and assigns previously unscoped records and profiles to it.
    Existing companies are retained. The Creator can see all companies; Admins and Encoders are restricted to their own.
+   Migration 011 permits company edits/deletion only for the Creator. A company with linked profiles or business records
+   cannot be deleted. Deleting an account keeps its message text in History and replaces its profile references with a
+   deleted-user label.
 
 ## 3. Create a Creator account
 1. **Authentication → Users → Add user → Create new user.** Enter your email and a password, and tick **Auto Confirm User**.
@@ -35,14 +39,18 @@ and Maven on the computer that runs the app.
    ```
 4. Sign in as Creator. Admins can then register themselves from the sign-in screen; that flow creates their company.
 
-## 4. Deploy the "create user" function
-This lets admins add accounts from inside the app. It keeps the powerful service key on the server.
+## 4. Deploy account functions
+These server-side functions let admins create accounts and let the Creator delete accounts or request password reset
+emails. They keep the powerful service key on the server. Configure Supabase Auth email delivery and the recovery
+redirect URL so reset links can reach account owners.
 1. Install Node.js/npm if needed. You can run the Supabase CLI through `npx` without installing a global `supabase` command.
 2. Open PowerShell in the BRED project folder (the folder containing `supabase\config.toml` and `supabase\functions\`), then run:
    ```
    npx supabase login
    npx supabase link --project-ref YOUR-PROJECT-REF
    npx supabase functions deploy admin-create-user
+   npx supabase functions deploy admin-delete-user
+   npx supabase functions deploy admin-send-password-reset
    npx supabase functions deploy admin-import-activity
    npx supabase functions deploy register-account
    npx supabase functions deploy review-account

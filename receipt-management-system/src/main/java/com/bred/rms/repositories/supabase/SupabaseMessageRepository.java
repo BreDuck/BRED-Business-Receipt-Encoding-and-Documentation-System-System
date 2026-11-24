@@ -8,6 +8,8 @@ import com.bred.rms.supabase.RestClient;
 import com.bred.rms.supabase.SupabaseException;
 
 import java.time.Instant;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,7 +28,7 @@ public final class SupabaseMessageRepository implements MessageRepository {
     @Override public List<ChatMessage> findFor(UUID userId) {
         try {
             List<ChatMessage> messages = new ArrayList<>();
-            String query = "select=id,sender_id,recipient_id,body,sent_at"
+            String query = "select=id,sender_id,recipient_id,sender_name,sender_email,recipient_name,body,sent_at,is_broadcast"
                     + "&or=(sender_id.eq." + userId + ",recipient_id.eq." + userId + ")"
                     + "&order=sent_at.asc,id.asc";
             for (JsonNode row : rest.selectAll("custom_messages", query)) messages.add(map(row));
@@ -52,6 +54,52 @@ public final class SupabaseMessageRepository implements MessageRepository {
         }
     }
 
+    @Override public List<ChatMessage> findHistory() {
+        try {
+            List<ChatMessage> messages = new ArrayList<>();
+            for (JsonNode row : rest.rpcAll("creator_message_history", Map.of())) messages.add(map(row));
+            return List.copyOf(messages);
+        } catch (SupabaseException e) {
+            if (e.status() == 404) {
+                throw new RepositoryException(
+                        "Creator chat history requires database migration 011 to be applied.", false);
+            }
+            throw SupabaseErrors.translate(e);
+        }
+    }
+
+    @Override public int sendBroadcast(List<UUID> recipientIds, String body) {
+        String text = validateBody(body);
+        List<String> ids = recipientIds == null ? List.of()
+                : recipientIds.stream().map(UUID::toString).toList();
+        try {
+            JsonNode result = rest.rpc("creator_broadcast", Map.of("p_recipient_ids", ids, "p_body", text));
+            if (result == null || !result.isNumber()) {
+                throw new RepositoryException("Supabase did not confirm the broadcast.", false);
+            }
+            return result.asInt();
+        } catch (SupabaseException e) {
+            throw SupabaseErrors.translate(e);
+        }
+    }
+
+    @Override public List<ChatMessage> findBroadcastsFor(UUID userId, Instant since) {
+        if (userId == null || since == null) return List.of();
+        try {
+            String encodedSince = URLEncoder.encode(since.toString(), StandardCharsets.UTF_8);
+            String query = "select=id,sender_id,recipient_id,sender_name,sender_email,recipient_name,body,sent_at,is_broadcast"
+                    + "&recipient_id=eq." + userId
+                    + "&is_broadcast=eq.true"
+                    + "&sent_at=gte." + encodedSince
+                    + "&order=sent_at.asc,id.asc";
+            List<ChatMessage> messages = new ArrayList<>();
+            for (JsonNode row : rest.selectAll("custom_messages", query)) messages.add(map(row));
+            return List.copyOf(messages);
+        } catch (SupabaseException e) {
+            throw SupabaseErrors.translate(e);
+        }
+    }
+
     private static String validateBody(String body) {
         String text = body == null ? "" : body.trim();
         if (text.isEmpty()) throw new RepositoryException("Write a message before sending.", false);
@@ -62,8 +110,10 @@ public final class SupabaseMessageRepository implements MessageRepository {
     }
 
     private static ChatMessage map(JsonNode row) {
-        Instant sentAt = Json.instant(row, "sent_at");
         return new ChatMessage(Json.uuid(row, "id"), Json.uuid(row, "sender_id"),
-                Json.uuid(row, "recipient_id"), Json.text(row, "body"), sentAt);
+                Json.uuid(row, "recipient_id"), Json.text(row, "body"), Json.instant(row, "sent_at"),
+                row.path("is_broadcast").asBoolean(false), Json.text(row, "sender_name"),
+                Json.text(row, "sender_email"),
+                Json.text(row, "recipient_name"));
     }
 }

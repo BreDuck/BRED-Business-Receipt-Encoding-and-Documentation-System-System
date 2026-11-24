@@ -2,6 +2,8 @@ package com.bred.rms.local;
 
 import com.bred.rms.config.AppContext;
 import com.bred.rms.models.Attachment;
+import com.bred.rms.models.ChatMessage;
+import com.bred.rms.models.Company;
 import com.bred.rms.models.Project;
 import com.bred.rms.models.Receipt;
 import com.bred.rms.models.ReceiptItem;
@@ -160,6 +162,54 @@ class LocalModeTest {
 
         AppContext reopened = adminContext(dir);
         assertEquals(List.of(sent), reopened.messages.findFor(sender.id()));
+    }
+
+    @Test
+    void creatorBroadcastsAndDeletedUsersRemainInGlobalHistory() throws Exception {
+        Path dir = newDir();
+        AppContext ctx = adminContext(dir);
+        char[] creatorPassword = "creator123".toCharArray();
+        ctx.users.create("Clark Hilario", "clarkhilario.bread@gmail.com", Role.ENCODER, creatorPassword);
+        ctx.auth.logout();
+        User creator = ctx.auth.login("clarkhilario.bread@gmail.com", creatorPassword.clone());
+        User recipient = ctx.users.create("Eli Encoder", "eli@x.test", Role.ENCODER, "secret1".toCharArray());
+
+        ChatMessage message = ctx.messages.send(recipient.id(), "Private note");
+        assertEquals(1, ctx.messageService.sendBroadcast(List.of(recipient.id()), "Office update"));
+        assertEquals(1, ctx.messages.findBroadcastsFor(recipient.id(), java.time.Instant.EPOCH).size());
+
+        ctx.users.delete(recipient.id());
+        List<ChatMessage> history = ctx.messageService.findHistory();
+        assertEquals(2, history.size());
+        ChatMessage preserved = history.stream().filter(m -> m.id().equals(message.id())).findFirst().orElseThrow();
+        assertEquals("Deleted user", preserved.recipientName());
+        assertEquals(message.body(), preserved.body());
+
+        ctx.auth.logout();
+        AppContext reopened = AppContext.createLocal(dir);
+        reopened.auth.login(creator.email(), creatorPassword.clone());
+        assertEquals(2, reopened.messageService.findHistory().size());
+    }
+
+    @Test
+    void creatorCanManageLocalCompaniesAndChangesSurviveRestart() throws Exception {
+        Path dir = newDir();
+        AppContext ctx = adminContext(dir);
+        char[] password = "creator123".toCharArray();
+        ctx.users.create("Clark Hilario", "clarkhilario.bread@gmail.com", Role.ENCODER, password);
+        ctx.auth.logout();
+        ctx.auth.login("clarkhilario.bread@gmail.com", password.clone());
+
+        assertTrue(ctx.companies.isSupported());
+        Company company = ctx.companies.list().get(0);
+        assertEquals("Local Company", company.name());
+        ctx.companies.update(company.id(), "Office");
+
+        AppContext reopened = AppContext.createLocal(dir);
+        reopened.auth.login("clarkhilario.bread@gmail.com", password.clone());
+        assertEquals("Office", reopened.companies.list().get(0).name());
+        reopened.companies.delete(company.id());
+        assertTrue(reopened.companies.list().isEmpty());
     }
 
     @Test

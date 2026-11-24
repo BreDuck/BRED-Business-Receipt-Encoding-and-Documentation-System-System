@@ -2,6 +2,7 @@ package com.bred.rms.ui.auth;
 
 import com.bred.rms.models.Company;
 import com.bred.rms.models.Role;
+import com.bred.rms.ui.components.StyledScrollPane;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.utils.BackgroundTask;
 
@@ -248,7 +249,7 @@ final class RegistrationPanel extends JPanel {
             item.setForeground(RmsColors.text());
             return item;
         });
-        JScrollPane list = new JScrollPane(suggestions);
+        JScrollPane list = new StyledScrollPane(suggestions);
         list.setPreferredSize(new Dimension(340, 150));
         list.setBorder(new RoundedFieldBorder(RmsColors.border(), 12));
         list.getViewport().setOpaque(true);

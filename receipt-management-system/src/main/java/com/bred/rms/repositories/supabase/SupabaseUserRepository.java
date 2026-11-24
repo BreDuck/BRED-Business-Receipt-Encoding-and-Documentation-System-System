@@ -19,7 +19,7 @@ import java.util.UUID;
 
 /** Profiles over PostgREST; account creation through the admin-create-user Edge Function. */
 public final class SupabaseUserRepository implements UserRepository {
-    private static final String COLUMNS = "select=id,full_name,email,role,is_active,account_status,created_at,companies(name)";
+    private static final String COLUMNS = "select=id,full_name,email,role,is_active,account_status,created_at,company_id,companies(name)";
     private final RestClient rest;
 
     public SupabaseUserRepository(RestClient rest) { this.rest = rest; }
@@ -113,12 +113,29 @@ public final class SupabaseUserRepository implements UserRepository {
         } catch (SupabaseException e) { throw SupabaseErrors.translate(e); }
     }
 
+    @Override public void delete(UUID id) {
+        try {
+            rest.invokeFunction("admin-delete-user", Map.of("user_id", id.toString()));
+        } catch (SupabaseException e) {
+            throw SupabaseErrors.translate(e);
+        }
+    }
+
+    @Override public void sendPasswordReset(UUID id) {
+        try {
+            rest.invokeFunction("admin-send-password-reset", Map.of("user_id", id.toString()));
+        } catch (SupabaseException e) {
+            throw SupabaseErrors.translate(e);
+        }
+    }
+
     private static User map(JsonNode n) {
         return new User(Json.uuid(n, "id"), Json.text(n, "full_name"), Json.text(n, "email"),
                 Role.fromDb(Json.text(n, "role")), !n.hasNonNull("is_active") || n.get("is_active").asBoolean(),
                 AccountStatus.fromDb(Json.text(n, "account_status")),
                 n.hasNonNull("created_at") ? Json.instant(n, "created_at") : java.time.Instant.EPOCH,
-                n.path("companies").path("name").asText(""));
+                n.path("companies").path("name").asText(""),
+                n.hasNonNull("company_id") ? Json.uuid(n, "company_id") : null);
     }
 
     private static RuntimeException registrationFunctionError(SupabaseException e) {

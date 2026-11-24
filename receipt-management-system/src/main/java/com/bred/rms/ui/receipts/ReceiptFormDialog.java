@@ -8,6 +8,7 @@ import com.bred.rms.models.ReceiptItem;
 import com.bred.rms.models.ReceiptMath;
 import com.bred.rms.models.ReceiptType;
 import com.bred.rms.models.Supplier;
+import com.bred.rms.ui.components.StyledScrollPane;
 import com.bred.rms.models.ValidationException;
 import com.bred.rms.repositories.AttachmentException;
 import com.bred.rms.repositories.AttachmentRules;
@@ -188,7 +189,7 @@ public final class ReceiptFormDialog extends JDialog {
             right.setHorizontalAlignment(SwingConstants.RIGHT);
             itemsTable.getColumnModel().getColumn(c).setCellRenderer(right);
         }
-        JScrollPane itemsScroll = new JScrollPane(itemsTable);
+        JScrollPane itemsScroll = new StyledScrollPane(itemsTable);
         itemsScroll.setPreferredSize(new Dimension(600, 150));
         JPanel itemButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         JButton addItem = new JButton("+ Add item");
@@ -208,7 +209,7 @@ public final class ReceiptFormDialog extends JDialog {
         JPanel attach = new JPanel(new BorderLayout(0, 6));
         attach.setBorder(BorderFactory.createTitledBorder("Attachments (png, jpg or pdf, up to 10 MB)"));
         attachmentList.setVisibleRowCount(4);
-        attach.add(new JScrollPane(attachmentList), BorderLayout.CENTER);
+        attach.add(new StyledScrollPane(attachmentList), BorderLayout.CENTER);
         JPanel attachButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         JButton addFile = new JButton("Add file…");
         addFile.addActionListener(e -> chooseFile());
