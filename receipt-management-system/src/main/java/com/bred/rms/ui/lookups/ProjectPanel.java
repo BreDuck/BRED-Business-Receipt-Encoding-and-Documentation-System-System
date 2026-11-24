@@ -61,7 +61,7 @@ public final class ProjectPanel extends JPanel implements RefreshablePanel {
         bar.add(add);
         bar.add(edit);
         User user = ctx.currentUser.get();
-        if (user != null && user.role() == Role.ADMIN) bar.add(delete);
+        if (user != null && user.role().canManageCompany()) bar.add(delete);
         add(bar, BorderLayout.NORTH);
 
         table.setRowHeight(28);

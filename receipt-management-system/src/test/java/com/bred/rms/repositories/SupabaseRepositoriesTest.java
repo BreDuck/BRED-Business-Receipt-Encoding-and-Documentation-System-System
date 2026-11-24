@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -227,12 +228,39 @@ class SupabaseRepositoriesTest {
         try (TestEnv env = new TestEnv()) {
             env.fake.on("POST", "/functions/v1/register-account", 201, "{\"message\":\"submitted\"}");
             UUID companyId = UUID.fromString("11111111-0000-0000-0000-000000000001");
-            new SupabaseUserRepository(env.rest).registerAccount("Ada", "ada@x.test", companyId, "Password123".toCharArray());
+            new SupabaseUserRepository(env.rest).registerAccount("Ada", "ada@x.test", Role.ENCODER,
+                    companyId, null, "Password123".toCharArray());
             assertEquals(1, env.fake.requests("POST", "/functions/v1/register-account").size());
             JsonNode body = M.readTree(env.fake.requests("POST", "/functions/v1/register-account").get(0).bodyString());
             assertEquals("Password123", body.get("password").asText());
             assertEquals(companyId.toString(), body.get("company_id").asText());
             assertTrue(env.sessions.current().isPresent(), "registration must not replace the current session");
+        }
+    }
+
+    @Test
+    void adminRegistrationSendsCompanyCreationMode() throws Exception {
+        try (TestEnv env = new TestEnv()) {
+            env.fake.on("POST", "/functions/v1/register-account", 201, "{\"message\":\"ready\"}");
+            new SupabaseUserRepository(env.rest).registerAccount("Ada", "ada@x.test", Role.ADMIN,
+                    null, "Acme Ltd", "Password123".toCharArray());
+            JsonNode body = M.readTree(env.fake.requests("POST", "/functions/v1/register-account").get(0).bodyString());
+            assertEquals("admin", body.get("role").asText());
+            assertEquals("Acme Ltd", body.get("company_name").asText());
+            assertFalse(body.has("company_id"));
+        }
+    }
+
+    @Test
+    void outdatedRegistrationFunctionExplainsCompanyCreationFix() {
+        try (TestEnv env = new TestEnv()) {
+            env.fake.on("POST", "/functions/v1/register-account", 400,
+                    "{\"error\":\"Choose an available company.\"}");
+            RepositoryException error = assertThrows(RepositoryException.class,
+                    () -> new SupabaseUserRepository(env.rest).registerAccount("Ada", "ada@x.test", Role.ADMIN,
+                            null, "Acme Ltd", "Password123".toCharArray()));
+            assertTrue(error.getMessage().contains("latest BRED JAR"));
+            assertTrue(error.getMessage().contains("functions deploy register-account"));
         }
     }
 

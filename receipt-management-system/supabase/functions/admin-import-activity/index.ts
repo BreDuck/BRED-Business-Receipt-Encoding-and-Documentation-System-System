@@ -66,19 +66,21 @@ Deno.serve(async (request) => {
     if (authError || !callerData.user) throw new HttpError(401, "Authentication required.");
 
     const { data: admin, error: profileError } = await service.from("profiles")
-      .select("role,is_active,account_status")
+      .select("role,is_active,account_status,company_id")
       .eq("id", callerData.user.id)
       .maybeSingle();
     if (profileError) {
       console.error("Failed to verify administrator profile:", profileError);
       throw new HttpError(500, "Could not verify administrator permissions.");
     }
-    if (!admin || admin.role !== "admin" || !admin.is_active || admin.account_status !== "APPROVED") {
+    if (!admin || (admin.role !== "admin" && admin.role !== "creator")
+      || !admin.is_active || admin.account_status !== "APPROVED") {
       throw new HttpError(403, "An approved, active administrator account is required.");
     }
 
     const { error: importError } = await service.from("activity_log")
-      .upsert(body.entries, { onConflict: "source_key", ignoreDuplicates: true });
+      .upsert(body.entries.map((entry) => ({ ...entry, company_id: admin.company_id })),
+        { onConflict: "source_key", ignoreDuplicates: true });
     if (importError) {
       console.error("Failed to import activity records:", importError);
       throw new HttpError(500, "Could not import the activity history.");

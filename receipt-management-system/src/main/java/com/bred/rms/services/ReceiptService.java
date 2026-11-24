@@ -109,6 +109,7 @@ public final class ReceiptService {
     }
 
     private void checkDuplicate(Receipt r, Supplier supplier) {
+        if (who.get().role() == com.bred.rms.models.Role.CREATOR) return;
         String tin = Guard.norm(supplier.tin());
         String no = Guard.norm(r.receiptNo());
         Map<UUID, String> tinBySupplier = new HashMap<>();

@@ -1,6 +1,8 @@
 package com.bred.rms.ui;
 
 import com.bred.rms.config.AppContext;
+import com.bred.rms.models.BugReport;
+import com.bred.rms.models.Role;
 import com.bred.rms.models.User;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.theme.ThemeManager;
@@ -11,14 +13,39 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.DefaultListCellRenderer;
+import javax.swing.DefaultListModel;
+import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.ListSelectionModel;
+import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.imageio.ImageIO;
+import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.Shape;
+import java.awt.geom.RoundRectangle2D;
+import javax.swing.border.AbstractBorder;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import javax.swing.Timer;
 
 /** Account details, appearance options and "change my password". */
 public final class SettingsPanel extends JPanel {
@@ -28,6 +55,16 @@ public final class SettingsPanel extends JPanel {
     private final JButton change = new JButton("Change password");
     private final JButton importLocal = new JButton("Import local data into Supabase");
     private final JLabel importMessage = new JLabel(" ");
+    private final JTextField reportTitle = new JTextField(42);
+    private final JTextArea reportDescription = new JTextArea(5, 42);
+    private final JLabel imageName = new JLabel("No image selected");
+    private final RoundedReportSubmitButton submitReport = new RoundedReportSubmitButton("Submit bug report");
+    private final JLabel reportMessage = new JLabel(" ");
+    private final JButton viewImage = new JButton("View attached image");
+    private final DefaultListModel<BugReport> reports = new DefaultListModel<>();
+    private final JList<BugReport> reportList = new JList<>(reports);
+    private final JTextArea reportDetails = new JTextArea(5, 42);
+    private Path selectedImage;
 
     /** Builds the settings screen for the signed-in user. */
     public SettingsPanel(AppContext ctx) {
@@ -35,8 +72,9 @@ public final class SettingsPanel extends JPanel {
         User u = ctx.currentUser.get();
         add(heading("Account"));
         add(line(u == null ? "Not signed in" : u.fullName() + " · " + u.email() + " · " + u.role().label()));
+        if (u != null && !u.companyName().isBlank()) add(line("Company: " + u.companyName()));
         add(line("Data stored in: " + ctx.storageLabel));
-        if (ctx.localDataImporter != null && u != null && u.role() == com.bred.rms.models.Role.ADMIN) {
+        if (ctx.localDataImporter != null && u != null && u.role().canManageCompany()) {
             add(Box.createVerticalStrut(12));
             add(heading("Move existing local data to Supabase"));
             add(line("Imports suppliers, projects, receipts, attachments and activity history."));
@@ -78,7 +116,235 @@ public final class SettingsPanel extends JPanel {
         message.setAlignmentX(LEFT_ALIGNMENT);
         message.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
         add(message);
+        add(Box.createVerticalStrut(24));
+        addContacts(ctx, u);
         setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+    }
+
+    private void addContacts(AppContext ctx, User user) {
+        JPanel contacts = new JPanel(new BorderLayout(0, 12));
+        contacts.setAlignmentX(LEFT_ALIGNMENT);
+        contacts.setOpaque(false);
+        contacts.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, RmsColors.border()),
+                BorderFactory.createEmptyBorder(16, 0, 0, 0)));
+
+        JPanel heading = new JPanel(new BorderLayout(12, 0));
+        heading.setOpaque(false);
+        heading.add(new CreatorAvatar(), BorderLayout.WEST);
+        JPanel contactCopy = new JPanel();
+        contactCopy.setOpaque(false);
+        contactCopy.setLayout(new BoxLayout(contactCopy, BoxLayout.Y_AXIS));
+        contactCopy.add(heading("Contacts"));
+        contactCopy.add(line("Creator: Clark Hilario"));
+        contactCopy.add(line("Email: clarkhilario.bread@gmail.com"));
+        contactCopy.add(line("Phone: +639944826590"));
+        heading.add(contactCopy, BorderLayout.CENTER);
+
+        JPanel reportForm = new RoundedReportCard();
+        reportForm.setLayout(new BoxLayout(reportForm, BoxLayout.Y_AXIS));
+        reportForm.setAlignmentX(LEFT_ALIGNMENT);
+        reportForm.setBorder(BorderFactory.createEmptyBorder(18, 20, 18, 20));
+
+        JLabel reportHeading = new JLabel("Submit a bug report");
+        reportHeading.setForeground(RmsColors.text());
+        reportHeading.setFont(reportHeading.getFont().deriveFont(Font.BOLD, 17f));
+        reportHeading.setAlignmentX(LEFT_ALIGNMENT);
+        JLabel reportSubtitle = new JLabel("Tell us what went wrong. A screenshot can help us fix it faster.");
+        reportSubtitle.setForeground(RmsColors.SECONDARY_TEXT);
+        reportSubtitle.setFont(reportSubtitle.getFont().deriveFont(12f));
+        reportSubtitle.setAlignmentX(LEFT_ALIGNMENT);
+        reportForm.add(reportHeading);
+        reportForm.add(reportSubtitle);
+        reportForm.add(Box.createVerticalStrut(14));
+
+        JLabel titleLabel = formLabel("Title");
+        titleLabel.setAlignmentX(LEFT_ALIGNMENT);
+        reportForm.add(titleLabel);
+        styleReportField(reportTitle);
+        reportTitle.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+        reportTitle.setPreferredSize(new Dimension(420, 42));
+        reportTitle.setAlignmentX(LEFT_ALIGNMENT);
+        reportForm.add(reportTitle);
+        reportForm.add(Box.createVerticalStrut(12));
+
+        JLabel descriptionLabel = formLabel("What happened?");
+        descriptionLabel.setAlignmentX(LEFT_ALIGNMENT);
+        reportForm.add(descriptionLabel);
+        reportDescription.setLineWrap(true);
+        reportDescription.setWrapStyleWord(true);
+        reportDescription.setOpaque(false);
+        reportDescription.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        JScrollPane descriptionScroll = new JScrollPane(reportDescription);
+        descriptionScroll.setOpaque(false);
+        descriptionScroll.getViewport().setOpaque(false);
+        descriptionScroll.setBorder(new RoundedFieldBorder(RmsColors.border(), 14));
+        descriptionScroll.setAlignmentX(LEFT_ALIGNMENT);
+        descriptionScroll.setPreferredSize(new Dimension(520, 116));
+        descriptionScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 116));
+        reportForm.add(descriptionScroll);
+        reportForm.add(Box.createVerticalStrut(14));
+
+        JPanel imagePicker = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        imagePicker.setOpaque(false);
+        imagePicker.setAlignmentX(LEFT_ALIGNMENT);
+        JButton chooseImage = new RoundedReportButton("Attach image");
+        chooseImage.setBackground(RmsColors.surface());
+        chooseImage.setForeground(RmsColors.text());
+        chooseImage.addActionListener(e -> chooseReportImage());
+        imageName.setForeground(RmsColors.SECONDARY_TEXT);
+        imageName.setFont(imageName.getFont().deriveFont(12f));
+        imagePicker.add(chooseImage);
+        imagePicker.add(imageName);
+        reportForm.add(imagePicker);
+        reportForm.add(Box.createVerticalStrut(12));
+
+        submitReport.setText("Submit bug report");
+        submitReport.setAlignmentX(LEFT_ALIGNMENT);
+        submitReport.setMaximumSize(new Dimension(180, 42));
+        submitReport.setPreferredSize(new Dimension(180, 42));
+        submitReport.setFont(submitReport.getFont().deriveFont(Font.BOLD, 12f));
+        submitReport.setBackground(RmsColors.primaryAccent());
+        submitReport.setForeground(RmsColors.primaryForeground());
+        submitReport.setContentAreaFilled(false);
+        submitReport.setOpaque(false);
+        submitReport.addActionListener(e -> submitReport(ctx));
+        reportForm.add(submitReport);
+        reportForm.add(Box.createVerticalStrut(8));
+        reportMessage.setAlignmentX(LEFT_ALIGNMENT);
+        reportMessage.setFont(reportMessage.getFont().deriveFont(12f));
+        reportForm.add(reportMessage);
+        if (ctx.bugReports == null) {
+            JLabel unavailable = line("Bug reports are available when connected to Supabase.");
+            unavailable.setForeground(RmsColors.SECONDARY_TEXT);
+            unavailable.setAlignmentX(LEFT_ALIGNMENT);
+            reportForm.add(Box.createVerticalStrut(6));
+            reportForm.add(unavailable);
+            submitReport.setEnabled(false);
+            chooseImage.setEnabled(false);
+        }
+
+        JPanel body = new JPanel();
+        body.setOpaque(false);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.add(heading);
+        body.add(Box.createVerticalStrut(12));
+        body.add(reportForm);
+        if (user != null && user.role() == Role.CREATOR && ctx.bugReports != null) {
+            body.add(Box.createVerticalStrut(18));
+            body.add(heading("Submitted reports"));
+            reportList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            reportList.setVisibleRowCount(5);
+            reportList.setCellRenderer(new DefaultListCellRenderer() {
+                @Override public java.awt.Component getListCellRendererComponent(JList<?> list, Object value,
+                        int index, boolean selected, boolean focus) {
+                    JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, selected, focus);
+                    if (value instanceof BugReport report) {
+                        label.setText(report.title() + " · " + report.companyName() + " · " + report.reporterEmail());
+                    }
+                    return label;
+                }
+            });
+            reportList.addListSelectionListener(e -> {
+                BugReport selected = reportList.getSelectedValue();
+                reportDetails.setText(selected == null ? "" : selected.description());
+                viewImage.setEnabled(selected != null && selected.attachmentPath() != null
+                        && !selected.attachmentPath().isBlank());
+            });
+            reportDetails.setEditable(false);
+            reportDetails.setLineWrap(true);
+            reportDetails.setWrapStyleWord(true);
+            viewImage.setEnabled(false);
+            viewImage.addActionListener(e -> showReportImage(ctx));
+            body.add(new JScrollPane(reportList));
+            body.add(new JScrollPane(reportDetails));
+            body.add(viewImage);
+            loadReports(ctx);
+        }
+        contacts.add(body, BorderLayout.CENTER);
+        add(contacts);
+    }
+
+    private void chooseReportImage() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Choose a screenshot or image");
+        chooser.setFileFilter(new FileNameExtensionFilter("Image files (PNG, JPEG, GIF, BMP, WebP)",
+                "png", "jpg", "jpeg", "gif", "bmp", "webp"));
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        selectedImage = chooser.getSelectedFile().toPath();
+        imageName.setText(selectedImage.getFileName().toString());
+    }
+
+    private void submitReport(AppContext ctx) {
+        submitReport.setEnabled(false);
+        String title = reportTitle.getText();
+        String description = reportDescription.getText();
+        Path attachment = selectedImage;
+        showReport("Submitting bug report…", false);
+        BackgroundTask.run(() -> {
+            if (attachment != null && Files.size(attachment) > com.bred.rms.services.BugReportService.MAX_IMAGE_BYTES) {
+                throw new IOException("Choose an image smaller than 8 MB.");
+            }
+            byte[] data = attachment == null ? null : Files.readAllBytes(attachment);
+            String contentType = attachment == null ? null : imageContentType(attachment);
+            ctx.bugReports.submit(title, description,
+                    attachment == null ? null : attachment.getFileName().toString(), data, contentType);
+            return Boolean.TRUE;
+        }, ignored -> {
+            submitReport.setEnabled(true);
+            reportTitle.setText("");
+            reportDescription.setText("");
+            selectedImage = null;
+            imageName.setText("No image selected");
+            showReport("Bug report sent to the Creator. Thank you.", false);
+            if (ctx.currentUser.get() != null && ctx.currentUser.get().role() == Role.CREATOR) loadReports(ctx);
+        }, error -> {
+            submitReport.setEnabled(true);
+            showReport(UiErrors.friendly(error), true);
+        });
+    }
+
+    private static String imageContentType(Path path) throws IOException {
+        String type = Files.probeContentType(path);
+        if (type != null && type.toLowerCase(java.util.Locale.ROOT).startsWith("image/")) return type;
+        String name = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        if (name.endsWith(".png")) return "image/png";
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+        if (name.endsWith(".gif")) return "image/gif";
+        if (name.endsWith(".bmp")) return "image/bmp";
+        if (name.endsWith(".webp")) return "image/webp";
+        throw new IOException("Choose a supported image file.");
+    }
+
+    private void loadReports(AppContext ctx) {
+        BackgroundTask.run(ctx.bugReports::listForCreator, items -> {
+            reports.clear();
+            items.forEach(reports::addElement);
+        }, error -> showReport(UiErrors.friendly(error), true));
+    }
+
+    private void showReportImage(AppContext ctx) {
+        BugReport selected = reportList.getSelectedValue();
+        if (selected == null || selected.attachmentPath() == null) return;
+        BackgroundTask.run(() -> ctx.bugReports.downloadAttachment(selected.attachmentPath()), bytes -> {
+            try {
+                java.awt.image.BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+                if (image == null) throw new IOException("The attached file is not a supported image.");
+                int width = Math.min(image.getWidth(), 1000);
+                int height = Math.min(image.getHeight(), 700);
+                double scale = Math.min((double) width / image.getWidth(), (double) height / image.getHeight());
+                JLabel preview = new JLabel(new javax.swing.ImageIcon(
+                        image.getScaledInstance((int) (image.getWidth() * scale), (int) (image.getHeight() * scale),
+                                java.awt.Image.SCALE_SMOOTH)));
+                JDialog dialog = new JDialog(javax.swing.SwingUtilities.getWindowAncestor(this), "Bug report image");
+                dialog.setContentPane(new JScrollPane(preview));
+                dialog.pack();
+                dialog.setLocationRelativeTo(this);
+                dialog.setVisible(true);
+            } catch (IOException e) {
+                showReport(e.getMessage(), true);
+            }
+        }, error -> showReport(UiErrors.friendly(error), true));
     }
 
     private static JLabel heading(String text) {
@@ -173,5 +439,183 @@ public final class SettingsPanel extends JPanel {
     private void show(String text, boolean bad) {
         message.setForeground(bad ? RmsColors.DANGER : RmsColors.SUCCESS);
         message.setText(text);
+    }
+
+    private void showReport(String text, boolean bad) {
+        reportMessage.setForeground(bad ? RmsColors.DANGER : RmsColors.SUCCESS);
+        reportMessage.setText(text);
+    }
+
+    private static JLabel formLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setForeground(RmsColors.text());
+        label.setFont(label.getFont().deriveFont(Font.BOLD, 12f));
+        label.setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
+        return label;
+    }
+
+    private static void styleReportField(JTextField field) {
+        field.setOpaque(false);
+        field.setForeground(RmsColors.text());
+        field.setCaretColor(RmsColors.primary());
+        field.setFont(field.getFont().deriveFont(13f));
+        field.setBorder(BorderFactory.createCompoundBorder(
+                new RoundedFieldBorder(RmsColors.border(), 14),
+                BorderFactory.createEmptyBorder(8, 10, 8, 10)));
+    }
+
+    private static final class RoundedReportCard extends JPanel {
+        private static final int RADIUS = 18;
+
+        private RoundedReportCard() {
+            setOpaque(false);
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(RmsColors.surface());
+            g.fill(new RoundRectangle2D.Float(0, 0, getWidth() - 1, getHeight() - 1, RADIUS, RADIUS));
+            g.setColor(RmsColors.border());
+            g.draw(new RoundRectangle2D.Float(0.5f, 0.5f, getWidth() - 1.5f, getHeight() - 1.5f, RADIUS, RADIUS));
+            g.dispose();
+            super.paintComponent(graphics);
+        }
+    }
+
+    private static final class RoundedFieldBorder extends AbstractBorder {
+        private final Color color;
+        private final int radius;
+
+        private RoundedFieldBorder(Color color, int radius) {
+            this.color = color;
+            this.radius = radius;
+        }
+
+        @Override
+        public java.awt.Insets getBorderInsets(java.awt.Component component) {
+            return new java.awt.Insets(0, 0, 0, 0);
+        }
+
+        @Override
+        public void paintBorder(java.awt.Component component, Graphics graphics, int x, int y,
+                                int width, int height) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(color);
+            g.draw(new RoundRectangle2D.Float(x + 0.5f, y + 0.5f,
+                    width - 1, height - 1, radius, radius));
+            g.dispose();
+        }
+    }
+
+    private static final class RoundedReportSubmitButton extends JButton {
+        private RoundedReportSubmitButton(String text) {
+            super(text);
+            setContentAreaFilled(false);
+            setOpaque(false);
+            setBorder(BorderFactory.createEmptyBorder(8, 14, 8, 14));
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Shape shape = new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 16, 16);
+            g.setColor(isEnabled() ? getBackground() : RmsColors.border());
+            g.fill(shape);
+            g.clip(shape);
+            super.paintComponent(g);
+            g.dispose();
+        }
+    }
+
+    private static final class RoundedReportButton extends JButton {
+        private RoundedReportButton(String text) {
+            super(text);
+            setContentAreaFilled(false);
+            setOpaque(false);
+            setBorder(BorderFactory.createCompoundBorder(
+                    new RoundedFieldBorder(RmsColors.border(), 14),
+                    BorderFactory.createEmptyBorder(7, 12, 7, 12)));
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Shape shape = new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 14, 14);
+            g.setColor(getBackground());
+            g.fill(shape);
+            g.clip(shape);
+            super.paintComponent(g);
+            g.dispose();
+        }
+    }
+
+    private static final class CreatorAvatar extends JPanel {
+        private final java.awt.image.BufferedImage image;
+        private final Timer animation;
+        private float hover;
+        private float target;
+
+        private CreatorAvatar() {
+            setOpaque(false);
+            setPreferredSize(new Dimension(76, 76));
+            java.awt.image.BufferedImage loaded = null;
+            try {
+                var resource = SettingsPanel.class.getResource("/com/bred/rms/ui/logo/breducklogo.png");
+                if (resource != null) loaded = ImageIO.read(resource);
+            } catch (IOException e) {
+                throw new IllegalStateException("Could not load the Creator profile image.", e);
+            }
+            image = loaded;
+            animation = new Timer(16, event -> {
+                hover += (target - hover) * 0.28f;
+                if (Math.abs(target - hover) < 0.015f) {
+                    hover = target;
+                    ((Timer) event.getSource()).stop();
+                }
+                repaint();
+            });
+            addMouseListener(new MouseAdapter() {
+                @Override public void mouseEntered(MouseEvent e) { target = 1; animation.start(); }
+                @Override public void mouseExited(MouseEvent e) { target = 0; animation.start(); }
+            });
+            setToolTipText("Creator profile");
+        }
+
+        @Override protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int diameter = Math.round(54 + hover * 12);
+            int x = Math.round((getWidth() - diameter) / 2f - hover * 6);
+            int y = (getHeight() - diameter) / 2;
+            java.awt.Shape clip = new java.awt.geom.Ellipse2D.Float(x, y, diameter, diameter);
+            g.setColor(RmsColors.primaryLight());
+            g.fill(clip);
+            if (image != null) {
+                g.setClip(clip);
+                g.drawImage(image, x, y, diameter, diameter, null);
+            } else {
+                g.setColor(RmsColors.primary());
+                g.setFont(getFont().deriveFont(Font.BOLD, 17f));
+                java.awt.FontMetrics metrics = g.getFontMetrics();
+                String initials = "CH";
+                g.drawString(initials, x + (diameter - metrics.stringWidth(initials)) / 2,
+                        y + (diameter + metrics.getAscent() - metrics.getDescent()) / 2);
+            }
+            g.setClip(null);
+            g.setColor(RmsColors.primaryAccent());
+            g.draw(clip);
+            g.dispose();
+        }
+
+        @Override public void removeNotify() {
+            animation.stop();
+            super.removeNotify();
+        }
     }
 }

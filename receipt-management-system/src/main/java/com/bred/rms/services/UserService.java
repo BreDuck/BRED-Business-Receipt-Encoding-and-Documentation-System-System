@@ -37,6 +37,9 @@ public final class UserService {
         if (email == null || !EMAIL.matcher(email.trim()).matches()) throw new ValidationException("Enter a valid email address.");
         if (password == null || password.length < 6) throw new ValidationException("The password must be at least 6 characters.");
         if (role == null) throw new ValidationException("Choose a role.");
+        if (role == Role.CREATOR && who.get().role() != Role.CREATOR) {
+            throw new SecurityException("Only the Creator can assign the Creator role.");
+        }
         return users.create(email.trim(), fullName.trim(), role, password);
     }
 
@@ -44,6 +47,9 @@ public final class UserService {
     public void update(UUID id, String fullName, Role role, boolean active) {
         Guard.requireAdmin(who, DENIED);
         if (Guard.blank(fullName)) throw new ValidationException("Full name is required.");
+        if (role == Role.CREATOR && who.get().role() != Role.CREATOR) {
+            throw new SecurityException("Only the Creator can assign the Creator role.");
+        }
         users.update(id, fullName.trim(), role, active);
     }
 

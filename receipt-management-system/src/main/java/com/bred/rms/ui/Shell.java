@@ -26,6 +26,7 @@ import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JToggleButton;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -40,12 +41,16 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Insets;
 import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.awt.geom.Ellipse2D;
 import java.awt.geom.RoundRectangle2D;
+import javax.imageio.ImageIO;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.io.IOException;
 
 /** The signed-in frame: sidebar menu (filtered by role), header with user info, and the active screen. */
 public final class Shell extends JPanel {
@@ -70,7 +75,7 @@ public final class Shell extends JPanel {
         Role role = user == null ? Role.ENCODER : user.role();
         this.modules = AccessPolicy.modulesFor(role);
 
-        add(buildSidebar(), BorderLayout.WEST);
+        add(buildSidebar(user), BorderLayout.WEST);
         JPanel right = new JPanel(new BorderLayout());
         right.add(buildHeader(user, onSignOut), BorderLayout.NORTH);
         content.setBorder(BorderFactory.createEmptyBorder(16, 18, 16, 18));
@@ -124,7 +129,7 @@ public final class Shell extends JPanel {
             case REPORTS -> new ReportsPanel(ctx);
             case USERS -> new UserManagementPanel(ctx);
             case ACTIVITY_LOG -> new ActivityLogPanel(ctx);
-            case SETTINGS -> new SettingsPanel(ctx);
+            case SETTINGS -> new JScrollPane(new SettingsPanel(ctx));
             case SUPPLIERS -> new SupplierPanel(ctx);
             case PROJECTS -> new ProjectPanel(ctx);
         };
@@ -159,7 +164,7 @@ public final class Shell extends JPanel {
         }).setVisible(true);
     }
 
-    private JComponent buildSidebar() {
+    private JComponent buildSidebar(User user) {
         SurfacePanel side = new SurfacePanel(null, RmsColors::surface) {
             @Override
             protected void paintComponent(Graphics graphics) {
@@ -175,7 +180,12 @@ public final class Shell extends JPanel {
         side.setPreferredSize(new Dimension(252, 0));
         brand.setFont(brand.getFont().deriveFont(Font.BOLD, 24f));
         brand.setForeground(RmsColors.primary());
-        JLabel sub = new JLabel("<html>Business Receipt<br>Encoding and<br>Documentation System</html>");
+        String companyName = user == null ? "" : user.companyName();
+        String companyText = companyName.isBlank()
+                ? (user != null && user.role() == Role.CREATOR ? "All companies" : "No company")
+                : companyName;
+        JLabel sub = new JLabel("<html><b>" + escapeHtml(companyText) + "</b><br>"
+                + "Business Receipt<br>Encoding and<br>Documentation System</html>");
         sub.setForeground(RmsColors.SECONDARY_TEXT);
         sub.setFont(sub.getFont().deriveFont(Font.PLAIN, 11f));
         brand.setAlignmentX(LEFT_ALIGNMENT);
@@ -308,6 +318,12 @@ public final class Shell extends JPanel {
         }
     }
 
+    private static String escapeHtml(String text) {
+        return text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
+    }
+
     private JComponent buildHeader(User user, Runnable onSignOut) {
         SurfacePanel header = new SurfacePanel(new BorderLayout(), RmsColors::surface);
         header.setBorder(BorderFactory.createEmptyBorder(10, 18, 10, 18));
@@ -324,8 +340,11 @@ public final class Shell extends JPanel {
                 : "Receipts are stored only on this computer.");
         tools.add(storage);
         if (user != null) {
+            if (user.role() == Role.CREATOR) {
+                tools.add(new ProfileAvatar());
+            }
             tools.add(new JLabel(user.fullName()));
-            tools.add(StatusBadge.of(user.role().label(), user.role() == Role.ADMIN ? RmsColors.primary() : RmsColors.INFO));
+            tools.add(StatusBadge.of(user.role().label(), user.role().canManageCompany() ? RmsColors.primary() : RmsColors.INFO));
         }
         JButton theme = new JButton(ThemeManager.isDark() ? "Light mode" : "Dark mode");
         theme.addActionListener(e -> {
@@ -338,5 +357,52 @@ public final class Shell extends JPanel {
         tools.add(out);
         header.add(tools, BorderLayout.EAST);
         return header;
+    }
+
+    private static final class ProfileAvatar extends JPanel {
+        private final BufferedImage image;
+
+        private ProfileAvatar() {
+            setOpaque(false);
+            setPreferredSize(new Dimension(38, 38));
+            setMaximumSize(new Dimension(38, 38));
+            setToolTipText("Creator profile");
+            BufferedImage loaded = null;
+            try {
+                var resource = ProfileAvatar.class.getResource("/com/bred/rms/ui/logo/breducklogo.png");
+                if (resource != null) loaded = ImageIO.read(resource);
+            } catch (IOException ignored) {
+                loaded = null;
+            }
+            image = loaded;
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int diameter = 36;
+            int x = (getWidth() - diameter) / 2;
+            int y = (getHeight() - diameter) / 2;
+            Ellipse2D clip = new Ellipse2D.Float(x, y, diameter, diameter);
+            g.setClip(clip);
+            if (image != null) {
+                g.drawImage(image, x, y, diameter, diameter, null);
+            } else {
+                g.setColor(RmsColors.primaryLight());
+                g.fill(clip);
+                g.setColor(RmsColors.primary());
+                g.setFont(getFont().deriveFont(Font.BOLD, 13f));
+                String initials = "CH";
+                var metrics = g.getFontMetrics();
+                g.drawString(initials, x + (diameter - metrics.stringWidth(initials)) / 2,
+                        y + (diameter + metrics.getAscent() - metrics.getDescent()) / 2);
+            }
+            g.setClip(null);
+            g.setColor(RmsColors.primaryAccent());
+            g.draw(clip);
+            g.dispose();
+        }
     }
 }

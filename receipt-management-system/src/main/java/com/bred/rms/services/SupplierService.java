@@ -28,9 +28,11 @@ public final class SupplierService {
         Guard.requireSignedIn(who);
         if (Guard.blank(v.businessName())) throw new ValidationException("Business name is required.");
         if (Guard.blank(v.tin())) throw new ValidationException("TIN is required.");
-        for (Supplier other : repo.findAll()) {
-            if (!other.id().equals(v.id()) && Guard.norm(other.tin()).equals(Guard.norm(v.tin()))) {
-                throw new ValidationException("A supplier with that TIN already exists.");
+        if (who.get().role() != com.bred.rms.models.Role.CREATOR) {
+            for (Supplier other : repo.findAll()) {
+                if (!other.id().equals(v.id()) && Guard.norm(other.tin()).equals(Guard.norm(v.tin()))) {
+                    throw new ValidationException("A supplier with that TIN already exists.");
+                }
             }
         }
         return repo.save(v);

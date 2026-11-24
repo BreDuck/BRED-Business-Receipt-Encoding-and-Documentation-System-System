@@ -1,6 +1,12 @@
 -- RMS 001: core tables. Run first.
-create type user_role as enum ('admin', 'encoder');
+create type user_role as enum ('admin', 'encoder', 'creator');
 create type receipt_type as enum ('official_receipt', 'sales_invoice', 'cash_invoice', 'delivery_receipt', 'other');
+
+create table if not exists companies (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (btrim(name) <> ''),
+  is_active boolean not null default true
+);
 
 create table profiles (
   id uuid primary key references auth.users (id) on delete cascade,

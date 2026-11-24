@@ -50,10 +50,15 @@ public final class AuthService implements AuthApi {
     }
 
     /** Validates and submits a registration request without creating a local sign-in session. */
-    @Override public void registerAccount(String fullName, String email, java.util.UUID companyId, char[] password) throws AuthException {
+    @Override public void registerAccount(String fullName, String email, com.bred.rms.models.Role role,
+                                          java.util.UUID companyId, String companyName, char[] password) throws AuthException {
         if (fullName == null || fullName.isBlank()) throw new AuthException("Full name is required.");
         if (email == null || !EMAIL.matcher(email.trim()).matches()) throw new AuthException("Enter a valid email address.");
-        if (companyId == null) throw new AuthException("Choose a company to apply to.");
+        if (role == null || role == com.bred.rms.models.Role.CREATOR) throw new AuthException("Choose a valid registration type.");
+        if (role == com.bred.rms.models.Role.ENCODER && companyId == null) throw new AuthException("Choose a company to apply to.");
+        if (role == com.bred.rms.models.Role.ADMIN && (companyName == null || companyName.isBlank())) {
+            throw new AuthException("Enter the company name to create.");
+        }
         if (password == null || password.length < 8) throw new AuthException("Password must be at least 8 characters.");
         boolean letter = false;
         boolean digit = false;
@@ -63,7 +68,8 @@ public final class AuthService implements AuthApi {
         }
         if (!letter || !digit) throw new AuthException("Password must contain at least one letter and one number.");
         try {
-            users.registerAccount(fullName.trim(), email.trim(), companyId, password);
+            users.registerAccount(fullName.trim(), email.trim(), role, companyId,
+                    companyName == null ? null : companyName.trim(), password);
         } catch (RuntimeException e) {
             throw new AuthException(e.getMessage() == null ? "Registration could not be submitted." : e.getMessage());
         }

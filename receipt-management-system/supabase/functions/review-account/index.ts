@@ -65,7 +65,8 @@ Deno.serve(async (request) => {
       console.error("Failed to verify administrator profile:", profileError);
       throw new HttpError(500, "Could not verify administrator permissions.");
     }
-    if (!admin || admin.role !== "admin" || !admin.is_active || admin.account_status !== "APPROVED") {
+    if (!admin || (admin.role !== "admin" && admin.role !== "creator")
+      || !admin.is_active || admin.account_status !== "APPROVED") {
       throw new HttpError(403, "An approved, active administrator account is required.");
     }
 
@@ -79,6 +80,7 @@ Deno.serve(async (request) => {
       if (message.includes("no longer pending")) throw new HttpError(409, "This registration is no longer pending.");
       if (message.includes("not found")) throw new HttpError(404, "Registration not found.");
       if (message.includes("cannot review their own")) throw new HttpError(403, "You cannot review your own registration.");
+      if (message.includes("another company's")) throw new HttpError(403, "You cannot review another company's registration.");
       if (message.includes("administrator")) throw new HttpError(403, "An approved, active administrator account is required.");
       console.error("Failed to review registration:", reviewError);
       throw new HttpError(500, "The registration could not be reviewed.");

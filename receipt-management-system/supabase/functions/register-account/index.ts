@@ -4,7 +4,9 @@ type Registration = {
   full_name: string;
   email: string;
   password: string;
-  company_id: string;
+  role: "admin" | "encoder";
+  company_id?: string;
+  company_name?: string;
 };
 
 class HttpError extends Error {
@@ -45,16 +47,30 @@ function parseRegistration(value: unknown): Registration {
   if (!/[A-Za-z]/.test(body.password) || !/[0-9]/.test(body.password)) {
     throw new HttpError(400, "Password must contain at least one letter and one number.");
   }
-  if (typeof body.company_id !== "string"
-    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.company_id)) {
-    throw new HttpError(400, "Choose an available company.");
+  const role = body.role === undefined ? "encoder" : body.role;
+  if (role !== "admin" && role !== "encoder") {
+    throw new HttpError(400, "Choose Encoder or Admin registration.");
   }
-  return {
+  const registration: Registration = {
     full_name: body.full_name.trim(),
     email: body.email.trim().toLowerCase(),
     password: body.password,
-    company_id: body.company_id,
+    role,
   };
+  if (role === "admin") {
+    if (typeof body.company_name !== "string" || !body.company_name.trim()
+      || body.company_name.trim().length > 200) {
+      throw new HttpError(400, "Enter a company name (up to 200 characters).");
+    }
+    registration.company_name = body.company_name.trim();
+  } else {
+    if (typeof body.company_id !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.company_id)) {
+      throw new HttpError(400, "Choose an available company.");
+    }
+    registration.company_id = body.company_id;
+  }
+  return registration;
 }
 
 Deno.serve(async (request) => {
@@ -103,12 +119,19 @@ Deno.serve(async (request) => {
     }
     if (!created.user) throw new HttpError(500, "Supabase Auth did not return the created account.");
 
-    const { error: profileError } = await service.rpc("register_account_profile", {
-      p_id: created.user.id,
-      p_full_name: registration.full_name,
-      p_email: registration.email,
-      p_company_id: registration.company_id,
-    });
+    const { error: profileError } = registration.role === "admin"
+      ? await service.rpc("register_company_admin_profile", {
+        p_id: created.user.id,
+        p_full_name: registration.full_name,
+        p_email: registration.email,
+        p_company_name: registration.company_name,
+      })
+      : await service.rpc("register_account_profile", {
+        p_id: created.user.id,
+        p_full_name: registration.full_name,
+        p_email: registration.email,
+        p_company_id: registration.company_id,
+      });
     if (profileError) {
       console.error("Failed to create pending account profile:", profileError);
       const { error: rollbackError } = await service.auth.admin.deleteUser(created.user.id);
@@ -123,7 +146,9 @@ Deno.serve(async (request) => {
     }
 
     return json({
-      message: "Your registration has been submitted successfully. Please wait for an administrator to approve your account.",
+      message: registration.role === "admin"
+        ? "Your company and administrator account are ready. You can now sign in."
+        : "Your registration has been submitted successfully. Please wait for an administrator to approve your account.",
     }, 201);
   } catch (error) {
     if (error instanceof HttpError) return json({ error: error.message }, error.status);

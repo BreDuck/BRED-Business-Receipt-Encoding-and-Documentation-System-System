@@ -16,19 +16,23 @@ and Maven on the computer that runs the app.
    4. `004_storage.sql`: the private `receipts` bucket for attachments
    5. `005_local_import.sql`: idempotency key for imported activity history
    6. `006_account_approval.sql`: pending account status, review RPCs and protected profile access
+   7. `007_creator_role.sql`: adds the global Creator role
+   8. `008_company_scope_and_contacts.sql`: company-scoped data, private bug reports, and their Storage bucket
+   9. `009_creator_account.sql`: assigns `clarkhilario.bread@gmail.com` to the protected Creator role
 
-   The existing `companies` table must have UUID `id`, `name`, and boolean `is_active` columns. Only active companies
-   are offered on the registration form; the migration links each application to its company.
+   Migration 008 creates a `Legacy Company` only when needed and assigns previously unscoped records and profiles to it.
+   Existing companies are retained. The Creator can see all companies; Admins and Encoders are restricted to their own.
 
-## 3. Create the first admin
+## 3. Create a Creator account
 1. **Authentication → Users → Add user → Create new user.** Enter your email and a password, and tick **Auto Confirm User**.
 2. Click the new user and copy its **UUID**.
-3. In **SQL Editor** run (replace the three values):
+3. In **SQL Editor** run (replace the values; use an existing company UUID, or the `Legacy Company` UUID):
    ```sql
-   insert into profiles (id, full_name, email, role, is_active, account_status)
-   values ('PASTE-USER-UUID-HERE', 'Your Name', 'you@example.com', 'admin', true, 'APPROVED');
+   insert into profiles (id, full_name, email, role, is_active, account_status, company_id)
+   values ('PASTE-USER-UUID-HERE', 'Creator Name', 'creator@example.com', 'creator', true, 'APPROVED',
+           'PASTE-COMPANY-UUID-HERE');
    ```
-4. Optional: run `database/seed_data.sql`'s sample section for a few example suppliers and projects.
+4. Sign in as Creator. Admins can then register themselves from the sign-in screen; that flow creates their company.
 
 ## 4. Deploy the "create user" function
 This lets admins add accounts from inside the app. It keeps the powerful service key on the server.
@@ -43,13 +47,17 @@ This lets admins add accounts from inside the app. It keeps the powerful service
    npx supabase functions deploy review-account
    ```
    `YOUR-PROJECT-REF` is the part before `.supabase.co` in your project URL.
-   Registration requires the `register-account` function to be deployed. If the registration screen reports HTTP 404,
-   the function is missing or an older version is deployed; rerun the `register-account` deploy command above from this
-   folder. If `npx` cannot find Node.js, install Node.js first and reopen PowerShell.
+   Registration requires the current `register-account` function to be deployed. In the registration form, select
+   **Admin** (not Encoder) and enter a new company name; Admin registration creates the company automatically.
+   If Admin registration still reports “Choose an available company,” first rebuild and launch the latest app JAR
+   (`mvn -q package`, then `java -jar target/bred-0.1.0-SNAPSHOT.jar`): the request is reaching Supabase with the
+   Encoder role. If the latest JAR still gives that error, redeploy the function above. The company-creation RPC also
+   requires migration `008_company_scope_and_contacts.sql`. If `npx` cannot find Node.js, install Node.js first and
+   reopen PowerShell.
    The functions receive `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` automatically; you do not set
-   anything. `supabase/config.toml` disables gateway JWT verification only for `register-account`; that function uses the
-   service role for listing active company names and creating a pending encoder profile. The SQL function rechecks that
-   the selected company is active. Keep the service-role key in Supabase's function secrets only; never put it in
+   anything.    `supabase/config.toml` disables gateway JWT verification only for `register-account`; that function uses the
+   service role for listing active company names and for creating either a pending Encoder profile or a company plus
+   immediately active Admin profile. Keep the service-role key in Supabase's function secrets only; never put it in
    `application.properties`.
 
 ## 5. Point the app at your project
@@ -89,6 +97,7 @@ This app was built and tested without access to a live Supabase project (unit te
 - [ ] On a second computer (or a second run) sign in and see the same receipt.
 - [ ] **Users → Add user** creates an Encoder account (tests the Edge Function).
 - [ ] From the sign-in screen, **Create Account** submits a request and displays the approval message.
+- [ ] Select **Admin** in registration and enter a new company name: the company is created automatically, then sign in immediately with the created account.
 - [ ] The request appears in **Users** with **PENDING** status; its password cannot sign in before approval.
 - [ ] Approving enables sign-in; rejecting keeps the account blocked.
 - [ ] Sign in as the Encoder: no Users or Activity Log in the menu, no Delete button on receipts, Add/Edit works.

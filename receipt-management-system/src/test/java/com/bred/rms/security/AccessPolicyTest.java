@@ -19,6 +19,7 @@ class AccessPolicyTest {
     @Test
     void adminHasEveryModuleInMenuOrder() {
         assertEquals(java.util.List.of(Module.values()), AccessPolicy.modulesFor(Role.ADMIN));
+        assertEquals(java.util.List.of(Module.values()), AccessPolicy.modulesFor(Role.CREATOR));
         assertEquals(Module.DASHBOARD, Module.values()[0]);
     }
 }

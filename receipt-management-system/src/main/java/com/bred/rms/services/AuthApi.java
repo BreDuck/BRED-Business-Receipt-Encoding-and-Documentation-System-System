@@ -8,7 +8,8 @@ public interface AuthApi {
     User login(String email, char[] password) throws AuthException;
 
     /** Submits a public registration request without signing the user in. */
-    default void registerAccount(String fullName, String email, java.util.UUID companyId, char[] password) throws AuthException {
+    default void registerAccount(String fullName, String email, com.bred.rms.models.Role role,
+                                java.util.UUID companyId, String companyName, char[] password) throws AuthException {
         throw new AuthException("Account registration is not available.");
     }
 

@@ -2,9 +2,11 @@ package com.bred.rms.config;
 
 import com.bred.rms.models.User;
 import com.bred.rms.repositories.ActivityLogRepository;
+import com.bred.rms.repositories.BugReportRepository;
 import com.bred.rms.repositories.AttachmentStore;
 import com.bred.rms.repositories.UserRepository;
 import com.bred.rms.repositories.supabase.SupabaseActivityLogRepository;
+import com.bred.rms.repositories.supabase.SupabaseBugReportRepository;
 import com.bred.rms.repositories.supabase.SupabaseAttachmentStore;
 import com.bred.rms.repositories.supabase.SupabaseProjectRepository;
 import com.bred.rms.repositories.supabase.SupabaseReceiptRepository;
@@ -16,6 +18,7 @@ import com.bred.rms.local.LocalAuth;
 import com.bred.rms.local.LocalDatabase;
 import com.bred.rms.services.AuthApi;
 import com.bred.rms.services.AuthService;
+import com.bred.rms.services.BugReportService;
 import com.bred.rms.services.CurrentUser;
 import com.bred.rms.services.ProjectService;
 import com.bred.rms.services.ReceiptService;
@@ -39,6 +42,7 @@ public final class AppContext {
     public final ActivityLogRepository activityLog;
     public final ReportService reports;
     public final UserService users;
+    public final BugReportService bugReports;
     /** One-way local-to-cloud migration, available only in the Supabase-backed app. */
     public final SupabaseLocalDataImporter localDataImporter;
     /** Where data lives, for display. */
@@ -49,7 +53,7 @@ public final class AppContext {
     private AppContext(AuthApi auth, CurrentUser currentUser, ReceiptService receipts, SupplierService suppliers,
                        ProjectService projects, AttachmentStore attachments, UserRepository userRepository,
                        ActivityLogRepository activityLog, String storageLabel, String loginHint,
-                       SupabaseLocalDataImporter localDataImporter) {
+                       SupabaseLocalDataImporter localDataImporter, BugReportRepository bugReportRepository) {
         this.auth = auth;
         this.storageLabel = storageLabel;
         this.loginHint = loginHint;
@@ -63,6 +67,7 @@ public final class AppContext {
         this.activityLog = activityLog;
         this.reports = new ReportService(receipts, suppliers, projects);
         this.users = new UserService(userRepository, currentUser);
+        this.bugReports = bugReportRepository == null ? null : new BugReportService(bugReportRepository, currentUser);
     }
 
     /** Builds the real, Supabase-backed application. {@code config} must be configured. */
@@ -82,7 +87,7 @@ public final class AppContext {
         return new AppContext(auth, who, new ReceiptService(receiptRepo, supplierRepo, projectRepo, attachments, who),
                 new SupplierService(supplierRepo, receiptRepo, who), new ProjectService(projectRepo, receiptRepo, who),
                 attachments, userRepo, new SupabaseActivityLogRepository(rest), "Supabase project " + config.supabaseUrl(), null,
-                localDataImporter);
+                localDataImporter, new SupabaseBugReportRepository(rest));
     }
 
     /**
@@ -103,19 +108,19 @@ public final class AppContext {
                 : null;
         return new AppContext(auth, who, new ReceiptService(receiptRepo, supplierRepo, projectRepo, attachments, who),
                 new SupplierService(supplierRepo, receiptRepo, who), new ProjectService(projectRepo, receiptRepo, who),
-                attachments, db.users(), db.activityLog(), "This computer: " + db.directory().toAbsolutePath(), hint, null);
+                attachments, db.users(), db.activityLog(), "This computer: " + db.directory().toAbsolutePath(), hint, null, null);
     }
 
     /** Builds a context around supplied services (used by UI tests). */
     public static AppContext forTesting(User user, ReceiptService receipts, SupplierService suppliers,
                                         ProjectService projects, AttachmentStore attachments) {
-        return new AppContext(null, () -> user, receipts, suppliers, projects, attachments, null, null, "Test data", null, null);
+        return new AppContext(null, () -> user, receipts, suppliers, projects, attachments, null, null, "Test data", null, null, null);
     }
 
     /** Like {@link #forTesting(User, ReceiptService, SupplierService, ProjectService, AttachmentStore)} but with user and activity data. */
     public static AppContext forTesting(User user, ReceiptService receipts, SupplierService suppliers, ProjectService projects,
                                         AttachmentStore attachments, UserRepository userRepository, ActivityLogRepository activityLog) {
         return new AppContext(null, () -> user, receipts, suppliers, projects, attachments, userRepository, activityLog,
-                "Test data", null, null);
+                "Test data", null, null, null);
     }
 }

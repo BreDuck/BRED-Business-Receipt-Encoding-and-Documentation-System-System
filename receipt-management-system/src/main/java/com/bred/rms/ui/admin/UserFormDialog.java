@@ -8,6 +8,7 @@ import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.utils.BackgroundTask;
 
 import javax.swing.BorderFactory;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -29,7 +30,7 @@ final class UserFormDialog extends JDialog {
     private final JTextField name = new JTextField(24);
     private final JTextField email = new JTextField(24);
     private final JPasswordField password = new JPasswordField(24);
-    private final JComboBox<Role> role = new JComboBox<>(Role.values());
+    private final JComboBox<Role> role = new JComboBox<>();
     private final JCheckBox active = new JCheckBox("Active");
     private final JLabel error = new JLabel(" ");
     private final JButton save = new JButton("Save");
@@ -37,6 +38,9 @@ final class UserFormDialog extends JDialog {
     UserFormDialog(Window owner, AppContext ctx, User existing, Runnable onSaved) {
         super(owner, existing == null ? "Add user" : "Edit user", ModalityType.APPLICATION_MODAL);
         boolean creating = existing == null;
+        User actor = ctx.currentUser.get();
+        role.setModel(new DefaultComboBoxModel<>(actor != null && actor.role() == Role.CREATOR
+                ? Role.values() : new Role[]{Role.ADMIN, Role.ENCODER}));
         if (!creating) {
             name.setText(existing.fullName());
             email.setText(existing.email());

@@ -28,9 +28,11 @@ public final class ProjectService {
         Guard.requireSignedIn(who);
         if (Guard.blank(v.name())) throw new ValidationException("Project name is required.");
         if (Guard.blank(v.code())) throw new ValidationException("Project code is required.");
-        for (Project other : repo.findAll()) {
-            if (!other.id().equals(v.id()) && Guard.norm(other.code()).equals(Guard.norm(v.code()))) {
-                throw new ValidationException("A project with that code already exists.");
+        if (who.get().role() != com.bred.rms.models.Role.CREATOR) {
+            for (Project other : repo.findAll()) {
+                if (!other.id().equals(v.id()) && Guard.norm(other.code()).equals(Guard.norm(v.code()))) {
+                    throw new ValidationException("A project with that code already exists.");
+                }
             }
         }
         return repo.save(v);

@@ -53,12 +53,15 @@ public final class SupabaseUserRepository implements UserRepository {
         } catch (SupabaseException e) { throw SupabaseErrors.translate(e); }
     }
 
-    @Override public void registerAccount(String fullName, String email, UUID companyId, char[] password) {
+    @Override public void registerAccount(String fullName, String email, Role role, UUID companyId,
+                                          String companyName, char[] password) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("full_name", fullName.trim());
         body.put("email", email.trim());
         body.put("password", new String(password));
-        body.put("company_id", companyId.toString());
+        body.put("role", role.dbValue());
+        if (role == Role.ADMIN) body.put("company_name", companyName.trim());
+        else body.put("company_id", companyId.toString());
         try {
             rest.invokeFunction("register-account", body);
         } catch (SupabaseException e) { throw registrationFunctionError(e); }
@@ -108,6 +111,15 @@ public final class SupabaseUserRepository implements UserRepository {
                     "The register-account Supabase Function is missing or outdated. From the BRED project folder, run "
                             + "`npx supabase login`, `npx supabase link --project-ref YOUR-PROJECT-REF`, then "
                             + "`npx supabase functions deploy register-account`.",
+                    false);
+        }
+        if (e.status() == 400 && e.getMessage() != null
+                && e.getMessage().toLowerCase(java.util.Locale.ROOT).contains("choose an available company")) {
+            return new RepositoryException(
+                    "Supabase received this as an Encoder registration. If Admin is selected, close this app and "
+                            + "rebuild and run the latest BRED JAR (`mvn -q package`, then "
+                            + "`java -jar target/bred-0.1.0-SNAPSHOT.jar`). If the latest JAR still shows this error, "
+                            + "deploy the current function with `npx supabase functions deploy register-account`.",
                     false);
         }
         return SupabaseErrors.translate(e);

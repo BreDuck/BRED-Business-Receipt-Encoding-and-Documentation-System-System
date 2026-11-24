@@ -63,7 +63,7 @@ public final class ReceiptDetailPanel extends JPanel implements RefreshablePanel
         bar.add(back);
         bar.add(edit);
         User user = ctx.currentUser.get();
-        if (user != null && user.role() == Role.ADMIN) bar.add(delete);
+        if (user != null && user.role().canManageCompany()) bar.add(delete);
         bar.add(status);
 
         JPanel top = new JPanel(new BorderLayout(0, 8));

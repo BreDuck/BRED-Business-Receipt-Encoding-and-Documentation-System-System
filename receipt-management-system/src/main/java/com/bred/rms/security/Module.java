@@ -17,5 +17,5 @@ public enum Module {
 
     public String title() { return title; }
 
-    public boolean allows(Role role) { return !adminOnly || role == Role.ADMIN; }
+    public boolean allows(Role role) { return !adminOnly || role != null && role.canManageCompany(); }
 }

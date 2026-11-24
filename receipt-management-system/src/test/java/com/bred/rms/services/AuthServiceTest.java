@@ -106,7 +106,8 @@ class AuthServiceTest {
             env.sessions.clear();
             env.fake.on("POST", "/functions/v1/register-account", 201,
                     "{\"message\":\"Your registration has been submitted successfully.\"}");
-            service(env).registerAccount("Ada Lovelace", "ada@x.test", COMPANY_ID, "Password123".toCharArray());
+            service(env).registerAccount("Ada Lovelace", "ada@x.test", Role.ENCODER, COMPANY_ID, null,
+                    "Password123".toCharArray());
             var request = env.fake.requests("POST", "/functions/v1/register-account").get(0);
             assertTrue(request.bodyString().contains("\"full_name\":\"Ada Lovelace\""));
             assertTrue(request.bodyString().contains("\"email\":\"ada@x.test\""));
@@ -120,8 +121,36 @@ class AuthServiceTest {
     void registrationRejectsWeakPasswordBeforeRequest() {
         try (TestEnv env = new TestEnv()) {
             AuthException e = assertThrows(AuthException.class,
-                    () -> service(env).registerAccount("Ada", "ada@x.test", COMPANY_ID, "12345678".toCharArray()));
+                    () -> service(env).registerAccount("Ada", "ada@x.test", Role.ENCODER, COMPANY_ID, null,
+                            "12345678".toCharArray()));
             assertTrue(e.getMessage().contains("letter and one number"));
+            assertTrue(env.fake.requests().isEmpty());
+        }
+    }
+
+    @Test
+    void adminRegistrationCreatesCompanyWithoutSelectingAnExistingOne() throws Exception {
+        try (TestEnv env = new TestEnv()) {
+            env.sessions.clear();
+            env.fake.on("POST", "/functions/v1/register-account", 201,
+                    "{\"message\":\"Your company and administrator account are ready.\"}");
+            service(env).registerAccount("Ada Admin", "ada@x.test", Role.ADMIN, null, "Acme Ltd",
+                    "Password123".toCharArray());
+            var request = env.fake.requests("POST", "/functions/v1/register-account").get(0);
+            assertTrue(request.bodyString().contains("\"role\":\"admin\""));
+            assertTrue(request.bodyString().contains("\"company_name\":\"Acme Ltd\""));
+            assertTrue(!request.bodyString().contains("company_id"));
+            assertTrue(env.sessions.current().isEmpty());
+        }
+    }
+
+    @Test
+    void adminRegistrationRequiresCompanyName() {
+        try (TestEnv env = new TestEnv()) {
+            AuthException e = assertThrows(AuthException.class,
+                    () -> service(env).registerAccount("Ada", "ada@x.test", Role.ADMIN, null, " ",
+                            "Password123".toCharArray()));
+            assertTrue(e.getMessage().contains("company name"));
             assertTrue(env.fake.requests().isEmpty());
         }
     }

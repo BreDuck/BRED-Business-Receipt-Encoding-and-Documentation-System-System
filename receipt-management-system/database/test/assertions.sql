@@ -35,19 +35,25 @@ insert into auth.users(id, email) values
   ('f0000000-0000-0000-0000-000000000003', 'off@x.test'),
   ('70000000-0000-0000-0000-000000000004', 'pending@x.test'),
   ('80000000-0000-0000-0000-000000000005', 'reject@x.test'),
-  ('90000000-0000-0000-0000-000000000006', 'new@x.test');
+  ('90000000-0000-0000-0000-000000000006', 'new@x.test'),
+  ('c0000000-0000-0000-0000-000000000007', 'creator@x.test'),
+  ('d0000000-0000-0000-0000-000000000008', 'owner@newco.test');
 insert into companies(id, name, is_active)
-values ('11111111-0000-0000-0000-000000000001', 'Acme Ltd', true);
-insert into profiles(id, full_name, email, role, is_active, account_status) values
-  ('a0000000-0000-0000-0000-000000000001', 'Ada Admin', 'admin@x.test', 'admin', true, 'APPROVED'),
-  ('e0000000-0000-0000-0000-000000000002', 'Eli Encoder', 'enc@x.test', 'encoder', true, 'APPROVED'),
-  ('f0000000-0000-0000-0000-000000000003', 'Off Boarded', 'off@x.test', 'encoder', false, 'APPROVED'),
-  ('70000000-0000-0000-0000-000000000004', 'Pending Person', 'pending@x.test', 'encoder', false, 'PENDING'),
-  ('80000000-0000-0000-0000-000000000005', 'Rejected Person', 'reject@x.test', 'encoder', false, 'REJECTED');
-insert into suppliers(id, business_name, tin) values
-  ('11111111-0000-0000-0000-000000000001', 'Acme Hardware', '123-456-789-000'),
-  ('11111111-0000-0000-0000-000000000002', 'Beta Supplies', '987-654-321-000');
-insert into projects(id, name, code) values ('22222222-0000-0000-0000-000000000001', 'Bridge', 'BR-01');
+values ('11111111-0000-0000-0000-000000000001', 'Acme Ltd', true),
+       ('33333333-0000-0000-0000-000000000003', 'Beta Ltd', true);
+insert into profiles(id, full_name, email, role, is_active, account_status, company_id) values
+  ('a0000000-0000-0000-0000-000000000001', 'Ada Admin', 'admin@x.test', 'admin', true, 'APPROVED', '11111111-0000-0000-0000-000000000001'),
+  ('e0000000-0000-0000-0000-000000000002', 'Eli Encoder', 'enc@x.test', 'encoder', true, 'APPROVED', '11111111-0000-0000-0000-000000000001'),
+  ('f0000000-0000-0000-0000-000000000003', 'Off Boarded', 'off@x.test', 'encoder', false, 'APPROVED', '11111111-0000-0000-0000-000000000001'),
+  ('70000000-0000-0000-0000-000000000004', 'Pending Person', 'pending@x.test', 'encoder', false, 'PENDING', '11111111-0000-0000-0000-000000000001'),
+  ('80000000-0000-0000-0000-000000000005', 'Rejected Person', 'reject@x.test', 'encoder', false, 'PENDING', '11111111-0000-0000-0000-000000000001'),
+  ('c0000000-0000-0000-0000-000000000007', 'System Creator', 'creator@x.test', 'creator', true, 'APPROVED', '33333333-0000-0000-0000-000000000003');
+insert into suppliers(id, business_name, tin, company_id) values
+  ('11111111-0000-0000-0000-000000000001', 'Acme Hardware', '123-456-789-000', '11111111-0000-0000-0000-000000000001'),
+  ('11111111-0000-0000-0000-000000000002', 'Beta Supplies', '987-654-321-000', '11111111-0000-0000-0000-000000000001'),
+  ('33333333-0000-0000-0000-000000000003', 'Cross Company Supplies', '555-555-555-555', '33333333-0000-0000-0000-000000000003');
+insert into projects(id, name, code, company_id)
+values ('22222222-0000-0000-0000-000000000001', 'Bridge', 'BR-01', '11111111-0000-0000-0000-000000000001');
 
 create function tests.payload(no text, supplier uuid, price text default '100.00', discount text default '0') returns jsonb
 language sql as $$
@@ -82,12 +88,21 @@ select tests.expect_error($$select admin_update_profile('e0000000-0000-0000-0000
 select tests.expect_true((select count(*) from activity_log) = 0, 'encoder cannot read the activity log');
 delete from suppliers where id = '11111111-0000-0000-0000-000000000002';
 select tests.expect_true((select count(*) from suppliers) = 2, 'encoder delete of a supplier removes nothing');
+select tests.expect_true((select count(*) from companies) = 1, 'encoder cannot see another company');
+insert into bug_reports(title, description) values ('Missing button', 'The save button did not respond.');
+select tests.expect_true((select count(*) from bug_reports) = 1, 'reporter can read their own submitted report');
+insert into storage.objects(bucket_id, name) values ('bug-reports', auth.uid()::text || '/screen.png');
+select tests.expect_true((select count(*) from storage.objects where bucket_id = 'bug-reports') = 1,
+  'reporter can upload an optional image');
 insert into suppliers(business_name, tin) values ('Gamma', ' 555 ');
 select tests.expect_error($$insert into suppliers(business_name, tin) values ('Gamma 2', '555')$$, 'duplicate key');
-insert into storage.objects(bucket_id, name) values ('receipts', 'x/or-001-11111111-0000-0000-0000-000000000001.pdf');
-select tests.expect_true((select count(*) from storage.objects) = 1, 'encoder can upload to the receipts bucket');
+insert into storage.objects(bucket_id, name)
+values ('receipts', (select id::text || '/or-001.pdf' from receipts where receipt_no = 'OR-001' limit 1));
+select tests.expect_true((select count(*) from storage.objects where bucket_id = 'receipts') = 1,
+  'encoder can upload to the receipts bucket');
 delete from storage.objects where bucket_id = 'receipts';
-select tests.expect_true((select count(*) from storage.objects) = 1, 'encoder cannot delete stored files');
+select tests.expect_true((select count(*) from storage.objects where bucket_id = 'receipts') = 1,
+  'encoder cannot delete stored files');
 
 -- ===== inactive user =====
 select tests.login('f0000000-0000-0000-0000-000000000003');
@@ -128,7 +143,8 @@ select tests.expect_true((select count(*) from receipts) = 0, 'rejected user see
 
 -- ===== admin =====
 select tests.login('a0000000-0000-0000-0000-000000000001');
-select tests.expect_true((select count(*) from profiles) = 6, 'approved admin can list all account statuses');
+select tests.expect_true((select count(*) from profiles) = 6, 'approved admin can list company account statuses');
+select tests.expect_true((select count(*) from companies) = 1, 'admin can see only their own company');
 select tests.expect_true((select count(*) from activity_log where action = 'receipt.create') = 2, 'admin sees receipt.create log rows');
 select tests.expect_true((select count(*) from activity_log where action like 'suppliers.%') >= 1, 'supplier changes are logged by trigger');
 select tests.expect_error($$delete from suppliers where id = '11111111-0000-0000-0000-000000000001'$$, 'violates foreign key');
@@ -139,8 +155,28 @@ select tests.expect_true((select full_name from profiles where id = 'e0000000-00
 select tests.expect_true((select array_length(delete_receipt((select id from receipts where receipt_no = 'OR-001' and supplier_id = '11111111-0000-0000-0000-000000000001')), 1)) = 1, 'admin delete_receipt returns the storage paths');
 select tests.expect_true((select count(*) from receipts) = 1 and (select count(*) from receipt_items) = 2, 'delete cascades items of the deleted receipt only');
 delete from storage.objects where bucket_id = 'receipts';
-select tests.expect_true((select count(*) from storage.objects) = 0, 'admin can delete stored files');
+select tests.expect_true((select count(*) from storage.objects where bucket_id = 'receipts') = 0,
+  'admin can delete stored files');
 select tests.expect_true((select count(*) from activity_log where action = 'receipt.delete') = 1, 'receipt.delete is logged');
 
+-- ===== creator =====
+select tests.login('c0000000-0000-0000-0000-000000000007');
+select tests.expect_true(is_admin() and is_creator(), 'Creator has administrative permissions');
+select tests.expect_true((select count(*) from companies) = 3, 'Creator can see every company');
+select tests.expect_true((select count(*) from suppliers) = 4, 'Creator can see data across companies');
+select tests.expect_true((select count(*) from profiles) = 7, 'Creator can see every account');
+select tests.expect_true((select count(*) from bug_reports) = 1, 'Creator can see submitted bug reports');
+select tests.expect_true((select count(*) from storage.objects where bucket_id = 'bug-reports') = 1,
+  'Creator can view submitted report images');
+
 reset role;
+set role service_role;
+select register_company_admin_profile('d0000000-0000-0000-0000-000000000008',
+  'New Company Admin', 'owner@newco.test', 'New Company');
+select tests.expect_true((select role = 'admin' and account_status = 'APPROVED' and is_active
+  and company_id = (select id from companies where name = 'New Company')
+  from profiles where id = 'd0000000-0000-0000-0000-000000000008'),
+  'public Admin registration creates an active account and company');
+reset role;
+
 select 'ALL ASSERTIONS PASSED' as result;

@@ -4,7 +4,7 @@ type RequestBody = {
   email: string;
   password: string;
   full_name: string;
-  role: "admin" | "encoder";
+  role: "admin" | "encoder" | "creator";
 };
 
 class HttpError extends Error {
@@ -45,7 +45,7 @@ function parseRequestBody(value: unknown): RequestBody {
   if (body.password.length < 6) {
     throw new HttpError(400, "Password must be at least 6 characters.");
   }
-  if (body.role !== "admin" && body.role !== "encoder") {
+  if (body.role !== "admin" && body.role !== "encoder" && body.role !== "creator") {
     throw new HttpError(400, "Invalid role.");
   }
   return {
@@ -97,15 +97,19 @@ Deno.serve(async (request) => {
 
     const { data: admin, error: profileLookupError } = await service
       .from("profiles")
-      .select("role,is_active,account_status,full_name")
+      .select("role,is_active,account_status,full_name,company_id")
       .eq("id", callerData.user.id)
       .maybeSingle();
     if (profileLookupError) {
       console.error("Failed to verify administrator profile:", profileLookupError);
       throw new HttpError(500, "Could not verify administrator permissions.");
     }
-    if (!admin || admin.role !== "admin" || !admin.is_active || admin.account_status !== "APPROVED") {
+    if (!admin || (admin.role !== "admin" && admin.role !== "creator")
+      || !admin.is_active || admin.account_status !== "APPROVED") {
       throw new HttpError(403, "An approved, active administrator account is required.");
+    }
+    if (body.role === "creator" && admin.role !== "creator") {
+      throw new HttpError(403, "Only the Creator can assign the Creator role.");
     }
 
     const email = body.email.trim();
@@ -133,6 +137,7 @@ Deno.serve(async (request) => {
       role: body.role,
       is_active: true,
       account_status: "APPROVED",
+      company_id: admin.company_id,
     });
     if (profileError) {
       console.error("Failed to create user profile:", profileError);

@@ -54,7 +54,7 @@ class LookupPanelsTest {
             for (Container panel : List.<Container>of(new SupplierPanel(ctx), new ProjectPanel(ctx))) {
                 List<String> labels = buttonLabels(panel);
                 assertTrue(labels.contains("Edit"), labels.toString());
-                assertEquals(role == Role.ADMIN, labels.contains("Delete"), role + " " + labels);
+                assertEquals(role != Role.ENCODER, labels.contains("Delete"), role + " " + labels);
             }
         }
         assertFalse(buttonLabels(new SupplierPanel(TestContexts.withUser(Role.ENCODER))).contains("Delete"));

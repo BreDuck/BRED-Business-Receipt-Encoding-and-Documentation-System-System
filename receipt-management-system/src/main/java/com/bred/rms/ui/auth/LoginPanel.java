@@ -1,6 +1,7 @@
 package com.bred.rms.ui.auth;
 
 import com.bred.rms.models.Company;
+import com.bred.rms.models.Role;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.theme.ThemeManager;
 
@@ -51,7 +52,8 @@ public final class LoginPanel extends JLayeredPane {
     /** Submits a public registration request and returns an error message, or null on success. */
     @FunctionalInterface
     public interface RegistrationHandler {
-        void handle(String fullName, String email, java.util.UUID companyId, char[] password, Consumer<String> done);
+        void handle(String fullName, String email, Role role, java.util.UUID companyId, String companyName,
+                    char[] password, Consumer<String> done);
     }
 
     private final LoginHandler loginHandler;

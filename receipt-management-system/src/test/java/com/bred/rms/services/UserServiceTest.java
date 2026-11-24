@@ -69,6 +69,19 @@ class UserServiceTest {
     }
 
     @Test
+    void onlyCreatorCanAssignCreatorRole() {
+        UserService admin = as(Fakes.admin());
+        assertThrows(SecurityException.class,
+                () -> admin.create("Creator", "c@x.test", Role.CREATOR, "secret1".toCharArray()));
+        assertThrows(SecurityException.class,
+                () -> admin.update(UUID.randomUUID(), "Creator", Role.CREATOR, true));
+
+        User creator = new User(UUID.randomUUID(), "Creator", "c@x.test", Role.CREATOR, true);
+        User created = as(creator).create("Second Creator", "second@x.test", Role.CREATOR, "secret1".toCharArray());
+        assertEquals(Role.CREATOR, created.role());
+    }
+
+    @Test
     void lastAdminDemoteErrorMessageIsShown() {
         UserService svc = as(Fakes.admin());
         repo.failUpdateWith = new RepositoryException("You cannot remove the last active administrator.", false);

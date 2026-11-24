@@ -23,7 +23,8 @@ public interface UserRepository {
     void update(UUID id, String fullName, Role role, boolean active);
 
     /** Submits a public registration request. Supabase implementations send it to the register-account function. */
-    default void registerAccount(String fullName, String email, java.util.UUID companyId, char[] password) {
+    default void registerAccount(String fullName, String email, Role role, java.util.UUID companyId,
+                                 String companyName, char[] password) {
         throw new RepositoryException("Public registration is not available in local mode.", false);
     }
 

@@ -37,10 +37,10 @@ public final class MainWindow extends JFrame {
             cards.show(root, "setup");
             return;
         }
-        login = new LoginPanel(this::attemptLogin, (fullName, email, companyId, password, done) ->
+        login = new LoginPanel(this::attemptLogin, (fullName, email, role, companyId, companyName, password, done) ->
                 BackgroundTask.run(() -> {
                     try {
-                        ctx.auth.registerAccount(fullName, email, companyId, password);
+                        ctx.auth.registerAccount(fullName, email, role, companyId, companyName, password);
                     } catch (AuthException e) {
                         throw new RegistrationFailure(e.getMessage());
                     }

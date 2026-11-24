@@ -9,7 +9,7 @@ final class Guard {
 
     static void requireAdmin(CurrentUser who, String message) {
         User u = who.get();
-        if (u == null || u.role() != Role.ADMIN || !u.active()) throw new SecurityException(message);
+        if (u == null || !u.role().canManageCompany() || !u.active()) throw new SecurityException(message);
     }
 
     static void requireSignedIn(CurrentUser who) {
