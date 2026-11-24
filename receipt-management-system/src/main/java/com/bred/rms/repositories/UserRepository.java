@@ -14,6 +14,11 @@ import java.util.UUID;
 public interface UserRepository {
     List<User> findAll();
 
+    /** Lists active users visible as direct-message recipients, without exposing their email addresses. */
+    default List<User> findMessagingContacts() {
+        return findAll().stream().filter(User::active).toList();
+    }
+
     Optional<User> findById(UUID id);
 
     /** Creates an account (admin only). */

@@ -19,6 +19,7 @@ and Maven on the computer that runs the app.
    7. `007_creator_role.sql`: adds the global Creator role
    8. `008_company_scope_and_contacts.sql`: company-scoped data, private bug reports, and their Storage bucket
    9. `009_creator_account.sql`: assigns `clarkhilario.bread@gmail.com` to the protected Creator role
+   10. `010_custom_messages.sql`: private direct messages and company-aware teammate contacts
 
    Migration 008 creates a `Legacy Company` only when needed and assigns previously unscoped records and profiles to it.
    Existing companies are retained. The Creator can see all companies; Admins and Encoders are restricted to their own.

@@ -32,6 +32,22 @@ public final class SupabaseUserRepository implements UserRepository {
         } catch (SupabaseException e) { throw SupabaseErrors.translate(e); }
     }
 
+    @Override public List<User> findMessagingContacts() {
+        try {
+            List<User> out = new ArrayList<>();
+            JsonNode contacts = rest.rpc("message_contacts", Map.of());
+            if (!contacts.isArray()) {
+                throw new RepositoryException("Supabase returned an invalid teammate list.", false);
+            }
+            for (JsonNode n : contacts) {
+                out.add(new User(Json.uuid(n, "id"), Json.text(n, "full_name"), "",
+                        Role.fromDb(Json.text(n, "role")), true, AccountStatus.APPROVED,
+                        java.time.Instant.EPOCH, Json.text(n, "company_name")));
+            }
+            return out;
+        } catch (SupabaseException e) { throw SupabaseErrors.translate(e); }
+    }
+
     @Override public Optional<User> findById(UUID id) {
         try {
             JsonNode rows = rest.select("profiles", COLUMNS + "&id=eq." + id);

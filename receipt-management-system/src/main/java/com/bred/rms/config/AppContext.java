@@ -3,6 +3,8 @@ package com.bred.rms.config;
 import com.bred.rms.models.User;
 import com.bred.rms.repositories.ActivityLogRepository;
 import com.bred.rms.repositories.BugReportRepository;
+import com.bred.rms.repositories.MessageRepository;
+import com.bred.rms.repositories.RepositoryException;
 import com.bred.rms.repositories.AttachmentStore;
 import com.bred.rms.repositories.UserRepository;
 import com.bred.rms.repositories.supabase.SupabaseActivityLogRepository;
@@ -13,6 +15,7 @@ import com.bred.rms.repositories.supabase.SupabaseReceiptRepository;
 import com.bred.rms.repositories.supabase.SupabaseSupplierRepository;
 import com.bred.rms.repositories.supabase.SupabaseUserRepository;
 import com.bred.rms.repositories.supabase.SupabaseLocalDataImporter;
+import com.bred.rms.repositories.supabase.SupabaseMessageRepository;
 import com.bred.rms.local.LocalAttachmentStore;
 import com.bred.rms.local.LocalAuth;
 import com.bred.rms.local.LocalDatabase;
@@ -40,6 +43,7 @@ public final class AppContext {
     public final AttachmentStore attachments;
     public final UserRepository userRepository;
     public final ActivityLogRepository activityLog;
+    public final MessageRepository messages;
     public final ReportService reports;
     public final UserService users;
     public final BugReportService bugReports;
@@ -53,7 +57,8 @@ public final class AppContext {
     private AppContext(AuthApi auth, CurrentUser currentUser, ReceiptService receipts, SupplierService suppliers,
                        ProjectService projects, AttachmentStore attachments, UserRepository userRepository,
                        ActivityLogRepository activityLog, String storageLabel, String loginHint,
-                       SupabaseLocalDataImporter localDataImporter, BugReportRepository bugReportRepository) {
+                       SupabaseLocalDataImporter localDataImporter, BugReportRepository bugReportRepository,
+                       MessageRepository messages) {
         this.auth = auth;
         this.storageLabel = storageLabel;
         this.loginHint = loginHint;
@@ -65,6 +70,7 @@ public final class AppContext {
         this.attachments = attachments;
         this.userRepository = userRepository;
         this.activityLog = activityLog;
+        this.messages = messages;
         this.reports = new ReportService(receipts, suppliers, projects);
         this.users = new UserService(userRepository, currentUser);
         this.bugReports = bugReportRepository == null ? null : new BugReportService(bugReportRepository, currentUser);
@@ -87,7 +93,7 @@ public final class AppContext {
         return new AppContext(auth, who, new ReceiptService(receiptRepo, supplierRepo, projectRepo, attachments, who),
                 new SupplierService(supplierRepo, receiptRepo, who), new ProjectService(projectRepo, receiptRepo, who),
                 attachments, userRepo, new SupabaseActivityLogRepository(rest), "Supabase project " + config.supabaseUrl(), null,
-                localDataImporter, new SupabaseBugReportRepository(rest));
+                localDataImporter, new SupabaseBugReportRepository(rest), new SupabaseMessageRepository(rest));
     }
 
     /**
@@ -103,24 +109,47 @@ public final class AppContext {
         var supplierRepo = db.suppliers();
         var projectRepo = db.projects();
         var attachments = new LocalAttachmentStore(dataDir);
+        var users = db.users();
         String hint = db.defaultAdminPasswordInUse()
                 ? "First time here? Sign in with " + LocalDatabase.DEFAULT_ADMIN_EMAIL + " and password admin123, then change it under Settings."
                 : null;
         return new AppContext(auth, who, new ReceiptService(receiptRepo, supplierRepo, projectRepo, attachments, who),
                 new SupplierService(supplierRepo, receiptRepo, who), new ProjectService(projectRepo, receiptRepo, who),
-                attachments, db.users(), db.activityLog(), "This computer: " + db.directory().toAbsolutePath(), hint, null, null);
+                attachments, users, db.activityLog(), "This computer: " + db.directory().toAbsolutePath(), hint,
+                null, null, db.messages());
     }
 
     /** Builds a context around supplied services (used by UI tests). */
     public static AppContext forTesting(User user, ReceiptService receipts, SupplierService suppliers,
                                         ProjectService projects, AttachmentStore attachments) {
-        return new AppContext(null, () -> user, receipts, suppliers, projects, attachments, null, null, "Test data", null, null, null);
+        return new AppContext(null, () -> user, receipts, suppliers, projects, attachments, null, null,
+                "Test data", null, null, null, unavailableMessages());
     }
 
     /** Like {@link #forTesting(User, ReceiptService, SupplierService, ProjectService, AttachmentStore)} but with user and activity data. */
     public static AppContext forTesting(User user, ReceiptService receipts, SupplierService suppliers, ProjectService projects,
                                         AttachmentStore attachments, UserRepository userRepository, ActivityLogRepository activityLog) {
         return new AppContext(null, () -> user, receipts, suppliers, projects, attachments, userRepository, activityLog,
-                "Test data", null, null, null);
+                "Test data", null, null, null, unavailableMessages());
+    }
+
+    /** Test contexts can opt into a real fake through this overload. */
+    public static AppContext forTesting(User user, ReceiptService receipts, SupplierService suppliers, ProjectService projects,
+                                        AttachmentStore attachments, UserRepository userRepository,
+                                        ActivityLogRepository activityLog, MessageRepository messages) {
+        return new AppContext(null, () -> user, receipts, suppliers, projects, attachments, userRepository, activityLog,
+                "Test data", null, null, null, messages);
+    }
+
+    private static MessageRepository unavailableMessages() {
+        return new MessageRepository() {
+            @Override public java.util.List<com.bred.rms.models.ChatMessage> findFor(java.util.UUID userId) {
+                return java.util.List.of();
+            }
+
+            @Override public com.bred.rms.models.ChatMessage send(java.util.UUID recipientId, String body) {
+                throw new RepositoryException("Messaging is unavailable in this test context.", false);
+            }
+        };
     }
 }

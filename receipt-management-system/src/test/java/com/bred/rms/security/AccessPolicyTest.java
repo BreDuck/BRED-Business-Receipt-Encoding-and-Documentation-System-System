@@ -13,6 +13,7 @@ class AccessPolicyTest {
         var mods = AccessPolicy.modulesFor(Role.ENCODER);
         assertFalse(mods.contains(Module.USERS));
         assertFalse(mods.contains(Module.ACTIVITY_LOG));
+        assertTrue(mods.contains(Module.MESSAGES));
         assertTrue(mods.contains(Module.RECEIPTS) && mods.contains(Module.REPORTS) && mods.contains(Module.SETTINGS));
     }
 

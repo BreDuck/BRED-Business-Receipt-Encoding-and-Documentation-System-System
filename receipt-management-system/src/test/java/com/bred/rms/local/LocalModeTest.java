@@ -144,6 +144,25 @@ class LocalModeTest {
     }
 
     @Test
+    void directMessagesArePrivateAndSurviveARestart() throws Exception {
+        Path dir = newDir();
+        AppContext ctx = adminContext(dir);
+        User sender = ctx.auth.current();
+        User recipient = ctx.users.create("Eli Encoder", "eli@x.test", Role.ENCODER, "secret1".toCharArray());
+        User other = ctx.users.create("Sam Encoder", "sam@x.test", Role.ENCODER, "secret1".toCharArray());
+
+        var sent = ctx.messages.send(recipient.id(), "  Can you review this receipt?  ");
+        assertEquals("Can you review this receipt?", sent.body());
+        assertEquals(List.of(sent), ctx.messages.findFor(sender.id()));
+        assertEquals(List.of(sent), ctx.messages.findFor(recipient.id()));
+        assertTrue(ctx.messages.findFor(other.id()).isEmpty());
+        assertThrows(RepositoryException.class, () -> ctx.messages.send(recipient.id(), "  "));
+
+        AppContext reopened = adminContext(dir);
+        assertEquals(List.of(sent), reopened.messages.findFor(sender.id()));
+    }
+
+    @Test
     void deletingAReceiptRemovesItsFilesAndDownloadsCannotEscapeTheStore() throws Exception {
         Path dir = newDir();
         Path scan = Files.createTempFile("scan", ".pdf");

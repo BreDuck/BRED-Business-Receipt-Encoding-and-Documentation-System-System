@@ -126,6 +126,7 @@ public final class Shell extends JPanel {
                 yield directory;
             }
             case DASHBOARD -> new DashboardPanel(ctx, this::openReceipt);
+            case MESSAGES -> new MessagesPanel(ctx);
             case REPORTS -> new ReportsPanel(ctx);
             case USERS -> new UserManagementPanel(ctx);
             case ACTIVITY_LOG -> new ActivityLogPanel(ctx);

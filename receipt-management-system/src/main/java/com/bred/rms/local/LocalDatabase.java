@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.bred.rms.models.ActivityEntry;
 import com.bred.rms.models.Attachment;
+import com.bred.rms.models.ChatMessage;
 import com.bred.rms.models.Project;
 import com.bred.rms.models.Receipt;
 import com.bred.rms.models.ReceiptItem;
@@ -14,6 +15,7 @@ import com.bred.rms.models.Supplier;
 import com.bred.rms.models.User;
 import com.bred.rms.models.ValidationException;
 import com.bred.rms.repositories.ActivityLogRepository;
+import com.bred.rms.repositories.MessageRepository;
 import com.bred.rms.repositories.ProjectRepository;
 import com.bred.rms.repositories.ReceiptRepository;
 import com.bred.rms.repositories.RepositoryException;
@@ -65,6 +67,7 @@ public final class LocalDatabase {
         final List<Project> projects = new ArrayList<>();
         final List<Receipt> receipts = new ArrayList<>();
         final List<ActivityEntry> activity = new ArrayList<>();
+        final List<ChatMessage> messages = new ArrayList<>();
     }
 
     private final Path dir;
@@ -176,6 +179,13 @@ public final class LocalDatabase {
     public UserRepository users() {
         return new UserRepository() {
             @Override public List<User> findAll() { return read(s -> s.accounts.stream().map(Account::user).toList()); }
+
+            @Override public List<User> findMessagingContacts() {
+                return read(s -> s.accounts.stream().map(Account::user).filter(User::active)
+                        .map(u -> new User(u.id(), u.fullName(), "", u.role(), u.active(),
+                                u.accountStatus(), u.createdAt(), u.companyName()))
+                        .toList());
+            }
 
             @Override public Optional<User> findById(UUID id) {
                 return read(s -> s.accounts.stream().map(Account::user).filter(u -> u.id().equals(id)).findFirst());
@@ -333,6 +343,46 @@ public final class LocalDatabase {
         return () -> read(s -> s.activity.stream().sorted(Comparator.comparing(ActivityEntry::at).reversed()).toList());
     }
 
+    /** Direct messages available in local-only mode. */
+    public MessageRepository messages() {
+        return new MessageRepository() {
+            @Override public List<ChatMessage> findFor(UUID userId) {
+                if (userId == null) return List.of();
+                return read(s -> s.messages.stream()
+                        .filter(m -> userId.equals(m.senderId()) || userId.equals(m.recipientId()))
+                        .sorted(Comparator.comparing(ChatMessage::sentAt).thenComparing(ChatMessage::id))
+                        .toList());
+            }
+
+            @Override public ChatMessage send(UUID recipientId, String body) {
+                String text = body == null ? "" : body.trim();
+                if (text.isEmpty()) throw new RepositoryException("Write a message before sending.", false);
+                if (text.length() > 4000) {
+                    throw new RepositoryException("Messages can be up to 4000 characters.", false);
+                }
+                return write(s -> {
+                    User sender = who.get();
+                    if (sender == null || !sender.active()) {
+                        throw new RepositoryException("Sign in with an active account to send messages.", false);
+                    }
+                    User recipient = s.accounts.stream().map(Account::user)
+                            .filter(u -> u.id().equals(recipientId) && u.active()).findFirst()
+                            .orElseThrow(() -> new RepositoryException("That user is unavailable.", false));
+                    if (sender.id().equals(recipient.id())) {
+                        throw new RepositoryException("Choose another user to start a conversation.", false);
+                    }
+                    boolean sameCompany = sender.companyName().equalsIgnoreCase(recipient.companyName());
+                    if (!sameCompany && sender.role() != Role.CREATOR && recipient.role() != Role.CREATOR) {
+                        throw new RepositoryException("You can only message users in your company.", false);
+                    }
+                    ChatMessage message = new ChatMessage(UUID.randomUUID(), sender.id(), recipient.id(), text, Instant.now());
+                    s.messages.add(message);
+                    return message;
+                });
+            }
+        };
+    }
+
     private void log(State s, String action, String detail) {
         User me = who.get();
         s.activity.add(new ActivityEntry(Instant.now(), me == null ? null : me.id(), me == null ? "" : me.fullName(), action, detail));
@@ -375,6 +425,11 @@ public final class LocalDatabase {
             for (JsonNode n : root.path("activity")) {
                 s.activity.add(new ActivityEntry(Instant.parse(n.path("at").asText()), uuidOrNull(n.path("userId")), n.path("userName").asText(),
                         n.path("action").asText(), n.path("detail").asText()));
+            }
+            for (JsonNode n : root.path("messages")) {
+                s.messages.add(new ChatMessage(UUID.fromString(n.path("id").asText()),
+                        UUID.fromString(n.path("senderId").asText()), UUID.fromString(n.path("recipientId").asText()),
+                        n.path("body").asText(), Instant.parse(n.path("sentAt").asText())));
             }
             return s;
         } catch (IOException | RuntimeException e) {
@@ -438,6 +493,11 @@ public final class LocalDatabase {
             n.put("at", a.at().toString());
             if (a.userId() != null) n.put("userId", a.userId().toString());
             n.put("userName", a.userName()).put("action", a.action()).put("detail", a.detail());
+        }
+        ArrayNode messages = root.putArray("messages");
+        for (ChatMessage m : state.messages) {
+            messages.addObject().put("id", m.id().toString()).put("senderId", m.senderId().toString())
+                    .put("recipientId", m.recipientId().toString()).put("body", m.body()).put("sentAt", m.sentAt().toString());
         }
         try {
             byte[] bytes = SupabaseHttp.JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root).getBytes(StandardCharsets.UTF_8);

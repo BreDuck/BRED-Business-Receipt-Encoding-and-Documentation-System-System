@@ -4,7 +4,8 @@ import com.bred.rms.models.Role;
 
 /** The screens of the application, in menu order. */
 public enum Module {
-    DASHBOARD("Dashboard", false), RECEIPTS("Receipts", false), SUPPLIERS("Suppliers", false), PROJECTS("Projects", false),
+    DASHBOARD("Dashboard", false), MESSAGES("Custom Messages", false), RECEIPTS("Receipts", false),
+    SUPPLIERS("Suppliers", false), PROJECTS("Projects", false),
     REPORTS("Reports", false), USERS("Users", true), ACTIVITY_LOG("Activity Log", true), SETTINGS("Settings", false);
 
     private final String title;
