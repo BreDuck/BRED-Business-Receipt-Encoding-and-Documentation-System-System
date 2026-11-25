@@ -202,7 +202,7 @@ public final class SettingsPanel extends JPanel {
         creatorAvatar.setProfile("Clark Hilario", "clarkhilario.bread@gmail.com");
         creatorContact.add(creatorAvatar, BorderLayout.WEST);
         JTextArea contactCopy = new JTextArea(
-                "Creator: Clark Hilario\nEmail: clarkhilario.bread@gmail.com\nPhone: +639944826590", 5, 28);
+        "Creator: Clark Hilario\nEmail: clarkhilario.bread@gmail.com\nPhone: +639944826590", 3, 28);
         contactCopy.setEditable(false);
         contactCopy.setFocusable(false);
         contactCopy.setLineWrap(true);
@@ -212,7 +212,15 @@ public final class SettingsPanel extends JPanel {
         contactCopy.setFont(line("").getFont());
         contactCopy.setBorder(BorderFactory.createEmptyBorder());
         contactCopy.setMaximumSize(new Dimension(Integer.MAX_VALUE, contactCopy.getPreferredSize().height));
-        creatorContact.add(contactCopy, BorderLayout.CENTER);
+        
+        // GridBagLayout centres the text block vertically so it lines up with the avatar's centre.
+        JPanel copyCentered = new JPanel(new java.awt.GridBagLayout());
+        copyCentered.setOpaque(false);
+        java.awt.GridBagConstraints centre = new java.awt.GridBagConstraints();
+        centre.weightx = 1;
+        centre.fill = java.awt.GridBagConstraints.HORIZONTAL;
+        copyCentered.add(contactCopy, centre);
+        creatorContact.add(copyCentered, BorderLayout.CENTER);
         contactColumn.add(creatorContact);
 
         JPanel reportForm = new RoundedReportCard();

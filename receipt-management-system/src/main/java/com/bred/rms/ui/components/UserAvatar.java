@@ -14,6 +14,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.Ellipse2D;
 import java.awt.image.BufferedImage;
+import java.awt.geom.AffineTransform;
 import java.io.IOException;
 import java.util.Locale;
 
@@ -28,6 +29,7 @@ public final class UserAvatar extends JComponent {
     private final long animationStartNanos = System.nanoTime();
     private String displayName = "";
     private BufferedImage image;
+    private BufferedImage sharpImage;
     private float hover;
     private float hoverTarget;
     private long previousFrameNanos;
@@ -40,7 +42,7 @@ public final class UserAvatar extends JComponent {
         setMaximumSize(new Dimension(componentSize, componentSize));
         if (animated) {
             previousFrameNanos = System.nanoTime();
-            animation = new Timer(16, event -> advanceAnimation());
+            animation = new Timer(8, event -> advanceAnimation());
             animation.setCoalesce(true);
             addMouseListener(new MouseAdapter() {
                 @Override public void mouseEntered(MouseEvent event) { hoverTarget = 1; }
@@ -54,6 +56,8 @@ public final class UserAvatar extends JComponent {
     public void setProfile(String name, String email) {
         displayName = name == null ? "" : name;
         image = isDuckProfile(email) ? DuckImage.IMAGE : null;
+        sharpImage = image == null ? null : downscale(image, (imageSize + 12) * 2);
+
         repaint();
     }
 
@@ -75,28 +79,34 @@ public final class UserAvatar extends JComponent {
         super.paintComponent(graphics);
         Graphics2D g = (Graphics2D) graphics.create();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        int diameter = imageSize + Math.round(hover * 12);
-        int x = Math.round((getWidth() - diameter) / 2f - hover * 6);
-        int y = (getHeight() - diameter) / 2;
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+        // Sub-pixel positions (no rounding) so the bob and hover grow glide instead of stepping a whole pixel.
+        float diameter = imageSize + hover * 12f;
+        float x = (getWidth() - diameter) / 2f - hover * 6f;
+        float y = (getHeight() - diameter) / 2f;
         if (animated) {
             double phase = (System.nanoTime() - animationStartNanos) * (Math.PI * 2 / BOB_PERIOD_NANOS);
-            y -= Math.round((float) Math.sin(phase) * 3);
+            y -= (float) Math.sin(phase) * 4f;
         }
         Ellipse2D circle = new Ellipse2D.Float(x, y, diameter, diameter);
         g.setColor(RmsColors.primaryLight());
         g.fill(circle);
-        if (image != null) {
+        if (sharpImage != null) {
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
             g.setClip(circle);
-            g.drawImage(image, x, y, diameter, diameter, null);
+            AffineTransform place = new AffineTransform();
+            place.translate(x, y);
+            place.scale(diameter / sharpImage.getWidth(), diameter / sharpImage.getHeight());
+            g.drawImage(sharpImage, place, null);
             g.setClip(null);
         } else {
             g.setColor(RmsColors.primary());
             g.setFont(getFont().deriveFont(Font.BOLD, diameter < 44 ? 12f : 17f));
             String initials = initials(displayName);
             var metrics = g.getFontMetrics();
-            g.drawString(initials, x + (diameter - metrics.stringWidth(initials)) / 2,
-                    y + (diameter + metrics.getAscent() - metrics.getDescent()) / 2);
+            g.drawString(initials, Math.round(x + (diameter - metrics.stringWidth(initials)) / 2f),
+                    Math.round(y + (diameter + metrics.getAscent() - metrics.getDescent()) / 2f));
         }
         g.setColor(RmsColors.primaryAccent());
         g.draw(circle);
@@ -117,6 +127,26 @@ public final class UserAvatar extends JComponent {
         hover += (hoverTarget - hover) * progress;
         if (Math.abs(hoverTarget - hover) < 0.001f) hover = hoverTarget;
         repaint();
+    }
+
+    /** Scales once, in halving steps, to a smooth cached copy so each frame only draws a small transform. */
+    private static BufferedImage downscale(BufferedImage source, int target) {
+        BufferedImage current = source;
+        int w = source.getWidth();
+        int h = source.getHeight();
+        while (w > target || h > target) {
+            w = Math.max(target, w / 2);
+            h = Math.max(target, h / 2);
+            BufferedImage step = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = step.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g.drawImage(current, 0, 0, w, h, null);
+            g.dispose();
+            current = step;
+            if (w == target && h == target) break;
+        }
+        return current;
     }
 
     private static String initials(String name) {
