@@ -43,20 +43,44 @@ function resetEmailHtml(name: string, company: string, actionLink: string, logoU
   const safeLogo = escapeHtml(logoUrl);
   return `<!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light only"></head>
-  <body style="margin:0;padding:24px;background:#FFF9E8;font-family:Arial,Helvetica,sans-serif;color:#202124;">
-    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px;margin:0 auto;background:#FFFDF5;border:1px solid #EFE2B7;border-radius:16px;overflow:hidden;">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="supported-color-schemes" content="light dark">
+    <style>
+      :root { color-scheme: light dark; supported-color-schemes: light dark; }
+      /* Light colors stay inline below (they are the default everywhere). Dark mode overrides them. */
+      @media (prefers-color-scheme: dark) {
+        .bred-page { background: #1B1812 !important; }
+        .bred-card { background: #26211A !important; border-color: #3D3526 !important; }
+        .bred-ink { color: #F4EFE3 !important; }
+        .bred-muted { color: #A9A18F !important; }
+        .bred-brand, .bred-link { color: #F7C36B !important; }
+        .bred-footer { background: #1B1812 !important; color: #F7C36B !important; }
+      }
+      /* Outlook.com / Outlook apps apply dark mode through these attribute selectors instead. */
+      [data-ogsb] .bred-page { background: #1B1812 !important; }
+      [data-ogsb] .bred-card { background: #26211A !important; }
+      [data-ogsb] .bred-footer { background: #1B1812 !important; }
+      [data-ogsc] .bred-ink { color: #F4EFE3 !important; }
+      [data-ogsc] .bred-muted { color: #A9A18F !important; }
+      [data-ogsc] .bred-brand, [data-ogsc] .bred-link, [data-ogsc] .bred-footer { color: #F7C36B !important; }
+    </style>
+  </head>
+  <body class="bred-page bred-ink" style="margin:0;padding:24px;background:#FFF9E8;font-family:Arial,Helvetica,sans-serif;color:#202124;">
+    <table role="presentation" class="bred-card" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px;margin:0 auto;background:#FFFDF5;border:1px solid #EFE2B7;border-radius:16px;overflow:hidden;">
       <tr>
         <td style="padding:32px 28px 24px;text-align:center;border-bottom:4px solid #F7A72E;">
           <img src="${safeLogo}" width="88" height="88" alt="BreDuck mascot" style="display:block;margin:0 auto 12px;border-radius:50%;">
-          <div style="font-size:30px;font-weight:800;letter-spacing:4px;color:#6F4000;">BRED</div>
-          <div style="margin-top:8px;font-size:20px;font-weight:700;color:#202124;">${safeCompany}</div>
-          <div style="margin-top:5px;font-size:13px;color:#747B87;">Business Receipt Encoding and Documentation System</div>
+          <div class="bred-brand" style="font-size:30px;font-weight:800;letter-spacing:4px;color:#6F4000;">BRED</div>
+          <div class="bred-ink" style="margin-top:8px;font-size:20px;font-weight:700;color:#202124;">${safeCompany}</div>
+          <div class="bred-muted" style="margin-top:5px;font-size:13px;color:#747B87;">Business Receipt Encoding and Documentation System</div>
         </td>
       </tr>
       <tr>
         <td style="padding:30px 32px 24px;">
-          <h1 style="margin:0 0 16px;font-size:22px;color:#202124;">Reset your password</h1>
+          <h1 class="bred-ink" style="margin:0 0 16px;font-size:22px;color:#202124;">Reset your password</h1>
           <p style="margin:0 0 16px;line-height:1.6;">Hello ${safeName},</p>
           <p style="margin:0 0 24px;line-height:1.6;">A password reset was requested for your BRED account. Use the button below to choose a new password. If you did not request this, you can ignore this email.</p>
           <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto 24px;">
@@ -66,12 +90,12 @@ function resetEmailHtml(name: string, company: string, actionLink: string, logoU
               </td>
             </tr>
           </table>
-          <p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:#747B87;">If the button does not work, copy and paste this link into your browser:</p>
-          <p style="margin:0;word-break:break-all;font-size:12px;line-height:1.5;"><a href="${safeLink}" style="color:#6F4000;">${safeLink}</a></p>
+          <p class="bred-muted" style="margin:0 0 8px;font-size:12px;line-height:1.5;color:#747B87;">If the button does not work, copy and paste this link into your browser:</p>
+          <p style="margin:0;word-break:break-all;font-size:12px;line-height:1.5;"><a class="bred-link" href="${safeLink}" style="color:#6F4000;">${safeLink}</a></p>
         </td>
       </tr>
       <tr>
-        <td style="padding:18px 28px;text-align:center;background:#FFF9E8;color:#6F4000;font-size:12px;line-height:1.5;">
+        <td class="bred-footer" style="padding:18px 28px;text-align:center;background:#FFF9E8;color:#6F4000;font-size:12px;line-height:1.5;">
           BreDuck's Signature · BRED · ${safeCompany}
         </td>
       </tr>
