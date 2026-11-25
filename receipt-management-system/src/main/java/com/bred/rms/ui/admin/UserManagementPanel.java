@@ -171,16 +171,16 @@ public final class UserManagementPanel extends JPanel implements RefreshablePane
 
     private void sendPasswordReset(User user) {
         int answer = JOptionPane.showConfirmDialog(this,
-                "Send a password reset link to " + user.email() + "?\n"
+                "Send the BRED-branded password reset email to " + user.email() + "?\n"
                         + "The recipient must open the email to choose a new password.",
-                "Send password reset link", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+                "Send password reset email", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
         if (answer != JOptionPane.YES_OPTION) return;
         resetPassword.setEnabled(false);
         BackgroundTask.run(() -> {
             ctx.users.sendPasswordReset(user.id());
             return Boolean.TRUE;
         }, ignored -> {
-            status.setText("Password reset link sent to " + user.email() + ".");
+            status.setText("BRED-branded password reset email sent to " + user.email() + ".");
             updateButtons();
         }, error -> {
             status.setText(UiErrors.friendly(error));

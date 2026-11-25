@@ -1,6 +1,9 @@
 package com.bred.rms.repositories.supabase;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.bred.rms.models.Project;
+import com.bred.rms.models.Supplier;
+import com.bred.rms.models.ReceiptMath;
 import com.bred.rms.local.LocalAttachmentStore;
 import com.bred.rms.models.Attachment;
 import com.bred.rms.models.Receipt;
@@ -8,12 +11,25 @@ import com.bred.rms.models.ReceiptItem;
 import com.bred.rms.models.ReceiptType;
 import com.bred.rms.repositories.AttachmentException;
 import com.bred.rms.repositories.RepositoryException;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.ss.usermodel.FormulaEvaluator;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import com.bred.rms.supabase.RestClient;
 import com.bred.rms.supabase.SupabaseException;
 import com.bred.rms.supabase.SupabaseHttp;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,12 +37,16 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /** Imports an existing local data folder into the signed-in Supabase project. */
@@ -34,16 +54,317 @@ public final class SupabaseLocalDataImporter {
     private static final int ACTIVITY_BATCH_SIZE = 200;
 
     public record Result(int suppliers, int projects, int receipts, int attachments, int activityEntries, int localUsers) { }
+    public record ExcelResult(int suppliersCreated, int projectsCreated, int receiptsImported, int receiptsSkipped) { }
 
     private final RestClient rest;
     private final SupabaseReceiptRepository receipts;
     private final SupabaseAttachmentStore cloudAttachments;
+    private final SupabaseSupplierRepository suppliers;
+    private final SupabaseProjectRepository projects;
 
     public SupabaseLocalDataImporter(RestClient rest, SupabaseReceiptRepository receipts,
                                      SupabaseAttachmentStore cloudAttachments) {
         this.rest = rest;
         this.receipts = receipts;
         this.cloudAttachments = cloudAttachments;
+        this.suppliers = new SupabaseSupplierRepository(rest);
+        this.projects = new SupabaseProjectRepository(rest);
+    }
+
+    /** Imports a receipt workbook; each worksheet row represents one receipt line item. */
+    public ExcelResult importExcel(Path workbookPath) {
+        List<ExcelReceipt> rows = readExcel(workbookPath);
+        Map<String, Supplier> supplierByTin = new LinkedHashMap<>();
+        for (Supplier supplier : suppliers.findAll()) supplierByTin.put(normalize(supplier.tin()), supplier);
+        Map<String, Project> projectByCode = new LinkedHashMap<>();
+        for (Project project : projects.findAll()) projectByCode.put(normalize(project.code()), project);
+        Set<String> existingReceipts = new LinkedHashSet<>();
+        for (Receipt receipt : receipts.findAll()) {
+            existingReceipts.add(receiptKey(receipt.supplierId(), receipt.receiptNo()));
+        }
+
+        int createdSuppliers = 0;
+        int createdProjects = 0;
+        int importedReceipts = 0;
+        int skippedReceipts = 0;
+        for (ExcelReceipt row : rows) {
+            String tinKey = normalize(row.supplierTin());
+            Supplier supplier = supplierByTin.get(tinKey);
+            if (supplier == null) {
+                supplier = suppliers.save(new Supplier(null, row.supplierName(), row.supplierTin(),
+                        row.supplierAddress(), row.supplierContact()));
+                supplierByTin.put(tinKey, supplier);
+                createdSuppliers++;
+            }
+
+            String key = receiptKey(supplier.id(), row.receiptNo());
+            if (!existingReceipts.add(key)) {
+                skippedReceipts++;
+                continue;
+            }
+
+            UUID projectId = null;
+            if (!row.projectCode().isBlank()) {
+                String codeKey = normalize(row.projectCode());
+                Project project = projectByCode.get(codeKey);
+                if (project == null) {
+                    project = projects.save(new Project(null, row.projectName(), row.projectCode(), row.fundSource()));
+                    projectByCode.put(codeKey, project);
+                    createdProjects++;
+                }
+                projectId = project.id();
+            }
+
+            Receipt receipt = new Receipt(null, row.receiptNo(), row.date(), row.type(), supplier.id(), projectId,
+                    row.items(), row.discount(), row.vat(), row.additionalCharges(), List.of(), null, null, null);
+            receipts.save(receipt);
+            importedReceipts++;
+        }
+        return new ExcelResult(createdSuppliers, createdProjects, importedReceipts, skippedReceipts);
+    }
+
+    /** Writes a workbook with the supported columns and import guidance. */
+    public static void writeExcelTemplate(Path target) throws IOException {
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Receipts");
+            Row headers = sheet.createRow(0);
+            String[] columns = {"receipt_no", "date", "type", "supplier_name", "supplier_tin",
+                    "supplier_address", "supplier_contact", "project_name", "project_code", "project_fund_source",
+                    "item_description", "quantity", "unit_price", "discount", "vat", "additional_charges"};
+            var headerStyle = workbook.createCellStyle();
+            var bold = workbook.createFont();
+            bold.setBold(true);
+            headerStyle.setFont(bold);
+            for (int i = 0; i < columns.length; i++) {
+                Cell cell = headers.createCell(i);
+                cell.setCellValue(columns[i]);
+                cell.setCellStyle(headerStyle);
+                sheet.setColumnWidth(i, Math.min(42 * 256, Math.max(14 * 256, columns[i].length() * 256)));
+            }
+            Sheet instructions = workbook.createSheet("Instructions");
+            String[] notes = {
+                    "Enter one row per line item. Repeat the receipt and supplier fields on every line of the same receipt.",
+                    "Required columns: receipt_no, date, supplier_name, supplier_tin, item_description, quantity, unit_price.",
+                    "Dates may be Excel date cells or yyyy-MM-dd text. Receipt types: Official Receipt, Sales Invoice, Cash Invoice, Delivery Receipt, Other.",
+                    "Supplier TIN identifies an existing supplier; an unknown supplier is created from the workbook details.",
+                    "Project fields are optional, but project_name and project_code must be supplied together.",
+                    "Amounts are non-negative. Leave discount, vat, or additional_charges blank when they are zero.",
+                    "This import includes receipt details and line items; it does not import scans or other attachments.",
+                    "Receipts already in Supabase with the same supplier TIN and receipt number are skipped."
+            };
+            for (int i = 0; i < notes.length; i++) {
+                Row row = instructions.createRow(i);
+                row.createCell(0).setCellValue(notes[i]);
+            }
+            instructions.setColumnWidth(0, 115 * 256);
+            try (OutputStream output = Files.newOutputStream(target)) {
+                workbook.write(output);
+            }
+        }
+    }
+
+    private List<ExcelReceipt> readExcel(Path path) {
+        if (path == null || !Files.isRegularFile(path)) {
+            throw new RepositoryException("Select an Excel workbook to import.", false);
+        }
+        String fileName = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (!fileName.endsWith(".xlsx") && !fileName.endsWith(".xls")) {
+            throw new RepositoryException("Choose an Excel workbook (.xlsx or .xls).", false);
+        }
+        try (InputStream input = Files.newInputStream(path); Workbook workbook = WorkbookFactory.create(input)) {
+            Sheet sheet = workbook.getSheet("Receipts");
+            if (sheet == null && workbook.getNumberOfSheets() > 0) sheet = workbook.getSheetAt(0);
+            if (sheet == null || sheet.getPhysicalNumberOfRows() == 0) {
+                throw new RepositoryException("The workbook has no receipt rows.", false);
+            }
+            DataFormatter formatter = new DataFormatter(Locale.ROOT);
+            FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
+            Row headerRow = sheet.getRow(0);
+            if (headerRow == null) throw new RepositoryException("The workbook is missing its header row.", false);
+            Map<String, Integer> columns = new LinkedHashMap<>();
+            for (Cell cell : headerRow) {
+                String header = normalizeHeader(formatter.formatCellValue(cell, evaluator));
+                if (!header.isBlank() && columns.putIfAbsent(header, cell.getColumnIndex()) != null) {
+                    throw new RepositoryException("The workbook has a duplicate column: " + header + ".", false);
+                }
+            }
+            String[] required = {"receipt_no", "date", "supplier_name", "supplier_tin",
+                    "item_description", "quantity", "unit_price"};
+            for (String column : required) {
+                if (!columns.containsKey(normalizeHeader(column))) {
+                    throw new RepositoryException("The workbook is missing the required column: " + column + ".", false);
+                }
+            }
+
+            Map<String, ExcelReceipt> grouped = new LinkedHashMap<>();
+            for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+                Row row = sheet.getRow(rowIndex);
+                if (isBlank(row, formatter, evaluator)) continue;
+                int rowNumber = rowIndex + 1;
+                String receiptNo = cellText(row, columns, "receipt_no", formatter, evaluator);
+                String tin = cellText(row, columns, "supplier_tin", formatter, evaluator);
+                String supplierName = cellText(row, columns, "supplier_name", formatter, evaluator);
+                if (receiptNo.isBlank()) throw excelError(rowNumber, "receipt_no is required.");
+                if (tin.isBlank()) throw excelError(rowNumber, "supplier_tin is required.");
+                if (supplierName.isBlank()) throw excelError(rowNumber, "supplier_name is required.");
+
+                LocalDate date = excelDate(row, columns.get(normalizeHeader("date")), formatter, evaluator, rowNumber);
+                ReceiptType type = excelType(cellText(row, columns, "type", formatter, evaluator), rowNumber);
+                String projectName = cellText(row, columns, "project_name", formatter, evaluator);
+                String projectCode = cellText(row, columns, "project_code", formatter, evaluator);
+                String fundSource = cellText(row, columns, "project_fund_source", formatter, evaluator);
+                if (projectName.isBlank() != projectCode.isBlank()
+                        || (projectName.isBlank() && !fundSource.isBlank())) {
+                    throw excelError(rowNumber, "project_name and project_code must both be filled in or both be blank.");
+                }
+                String description = cellText(row, columns, "item_description", formatter, evaluator);
+                if (description.isBlank()) throw excelError(rowNumber, "item_description is required.");
+                BigDecimal quantity = excelNumber(row, columns, "quantity", formatter, evaluator, rowNumber, true)
+                        .setScale(3, RoundingMode.HALF_UP);
+                BigDecimal unitPrice = excelNumber(row, columns, "unit_price", formatter, evaluator, rowNumber, true)
+                        .setScale(2, RoundingMode.HALF_UP);
+                if (quantity.signum() <= 0) throw excelError(rowNumber, "quantity must be greater than zero.");
+                if (unitPrice.signum() < 0) throw excelError(rowNumber, "unit_price cannot be negative.");
+                BigDecimal discount = optionalMoney(row, columns, "discount", formatter, evaluator, rowNumber);
+                BigDecimal vat = optionalMoney(row, columns, "vat", formatter, evaluator, rowNumber);
+                BigDecimal additionalCharges = optionalMoney(row, columns, "additional_charges", formatter, evaluator, rowNumber);
+                if (discount.signum() < 0 || vat.signum() < 0 || additionalCharges.signum() < 0) {
+                    throw excelError(rowNumber, "discount, vat and additional_charges cannot be negative.");
+                }
+
+                ExcelReceipt candidate = new ExcelReceipt(receiptNo, date, type, supplierName, tin,
+                        cellText(row, columns, "supplier_address", formatter, evaluator),
+                        cellText(row, columns, "supplier_contact", formatter, evaluator),
+                        projectName, projectCode, fundSource, discount, vat, additionalCharges,
+                        new ArrayList<>(List.of(new ReceiptItem(description, quantity, unitPrice))));
+                String key = normalize(tin) + "|" + normalize(receiptNo);
+                ExcelReceipt existing = grouped.get(key);
+                if (existing == null) {
+                    grouped.put(key, candidate);
+                } else {
+                    if (!existing.sameHeader(candidate)) {
+                        throw excelError(rowNumber, "receipt-level fields must match across rows for the same receipt.");
+                    }
+                    existing.items().add(candidate.items().get(0));
+                }
+            }
+            if (grouped.isEmpty()) throw new RepositoryException("The workbook contains no receipt data rows.", false);
+            for (ExcelReceipt receipt : grouped.values()) {
+                BigDecimal subtotal = receipt.items().stream()
+                        .map(ReceiptItem::subtotal).reduce(BigDecimal.ZERO, BigDecimal::add);
+                if (receipt.discount().compareTo(ReceiptMath.money(subtotal)) > 0) {
+                    throw new RepositoryException("Discount cannot be more than the subtotal for receipt "
+                            + receipt.receiptNo() + ".", false);
+                }
+            }
+            return List.copyOf(grouped.values());
+        } catch (RepositoryException e) {
+            throw e;
+        } catch (IOException | RuntimeException e) {
+            throw new RepositoryException("Could not read the Excel workbook: " + e.getMessage(), false);
+        }
+    }
+
+    private static BigDecimal optionalMoney(Row row, Map<String, Integer> columns, String column,
+                                            DataFormatter formatter, FormulaEvaluator evaluator,
+                                            int rowNumber) {
+        BigDecimal value = excelNumber(row, columns, column, formatter, evaluator, rowNumber, false);
+        if (value.signum() < 0) throw excelError(rowNumber, column + " cannot be negative.");
+        return value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal excelNumber(Row row, Map<String, Integer> columns, String column,
+                                          DataFormatter formatter, FormulaEvaluator evaluator,
+                                          int rowNumber, boolean required) {
+        String value = cellText(row, columns, column, formatter, evaluator);
+        if (value.isBlank()) {
+            if (required) throw excelError(rowNumber, column + " is required.");
+            return BigDecimal.ZERO;
+        }
+        try {
+            return new BigDecimal(value.replace(",", "").replace("₱", "").trim());
+        } catch (NumberFormatException e) {
+            throw excelError(rowNumber, column + " must be a number.");
+        }
+    }
+
+    private static LocalDate excelDate(Row row, Integer column, DataFormatter formatter,
+                                       FormulaEvaluator evaluator, int rowNumber) {
+        Cell cell = column == null ? null : row.getCell(column, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
+        if (cell == null) throw excelError(rowNumber, "date is required.");
+        if (cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
+            try {
+                return DateUtil.getLocalDateTime(cell.getNumericCellValue()).toLocalDate();
+            } catch (RuntimeException e) {
+                throw excelError(rowNumber, "date is invalid.");
+            }
+        }
+        String value = formatter.formatCellValue(cell, evaluator).trim();
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException ignored) {
+            try {
+                return LocalDate.parse(value, DateTimeFormatter.ofPattern("M/d/uuuu", Locale.ROOT));
+            } catch (DateTimeParseException e) {
+                throw excelError(rowNumber, "date must be an Excel date or yyyy-MM-dd.");
+            }
+        }
+    }
+
+    private static ReceiptType excelType(String value, int rowNumber) {
+        if (value.isBlank()) return ReceiptType.OFFICIAL_RECEIPT;
+        String normalized = normalizeHeader(value);
+        for (ReceiptType type : ReceiptType.values()) {
+            if (normalizeHeader(type.name()).equals(normalized)
+                    || normalizeHeader(type.label()).equals(normalized)) return type;
+        }
+        throw excelError(rowNumber, "type is not a supported receipt type.");
+    }
+
+    private static String cellText(Row row, Map<String, Integer> columns, String name,
+                                   DataFormatter formatter, FormulaEvaluator evaluator) {
+        Integer column = columns.get(normalizeHeader(name));
+        if (column == null) return "";
+        Cell cell = row.getCell(column, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
+        return cell == null ? "" : formatter.formatCellValue(cell, evaluator).trim();
+    }
+
+    private static boolean isBlank(Row row, DataFormatter formatter,
+                                   FormulaEvaluator evaluator) {
+        if (row == null) return true;
+        for (Cell cell : row) if (!formatter.formatCellValue(cell, evaluator).isBlank()) return false;
+        return true;
+    }
+
+    private static String normalizeHeader(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String receiptKey(UUID supplierId, String receiptNo) {
+        return supplierId + "|" + normalize(receiptNo);
+    }
+
+    private static RepositoryException excelError(int row, String message) {
+        return new RepositoryException("Excel row " + row + ": " + message, false);
+    }
+
+    private record ExcelReceipt(String receiptNo, LocalDate date, ReceiptType type, String supplierName,
+                                String supplierTin, String supplierAddress, String supplierContact,
+                                String projectName, String projectCode, String fundSource,
+                                BigDecimal discount, BigDecimal vat, BigDecimal additionalCharges,
+                                List<ReceiptItem> items) {
+        private boolean sameHeader(ExcelReceipt other) {
+            return receiptNo.equals(other.receiptNo) && date.equals(other.date) && type == other.type
+                    && supplierName.equals(other.supplierName) && supplierTin.equals(other.supplierTin)
+                    && supplierAddress.equals(other.supplierAddress) && supplierContact.equals(other.supplierContact)
+                    && projectName.equals(other.projectName) && projectCode.equals(other.projectCode)
+                    && fundSource.equals(other.fundSource) && discount.compareTo(other.discount) == 0
+                    && vat.compareTo(other.vat) == 0 && additionalCharges.compareTo(other.additionalCharges) == 0;
+        }
     }
 
     public Result importDirectory(Path dataDirectory) throws AttachmentException {

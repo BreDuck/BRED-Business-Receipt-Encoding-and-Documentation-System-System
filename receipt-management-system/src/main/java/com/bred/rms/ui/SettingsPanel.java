@@ -56,6 +56,8 @@ public final class SettingsPanel extends JPanel {
     private final JLabel message = new JLabel(" ");
     private final JButton change = new JButton("Change password");
     private final JButton importLocal = new JButton("Import local data into Supabase");
+    private final JButton importExcel = new JButton("Import receipts from Excel");
+    private final JButton excelTemplate = new JButton("Create Excel template");
     private final JLabel importMessage = new JLabel(" ");
     private final JTextField reportTitle = new JTextField(42);
     private final JTextArea reportDescription = new JTextArea(5, 42);
@@ -82,11 +84,19 @@ public final class SettingsPanel extends JPanel {
         if (ctx.localDataImporter != null && u != null && u.role().canManageCompany()) {
             add(Box.createVerticalStrut(12));
             add(heading("Move existing local data to Supabase"));
-            add(line("Imports suppliers, projects, receipts, attachments and activity history."));
+            add(line("Import a local BRED data folder, or import receipts and line items from an Excel workbook."));
             add(line("Local passwords cannot be transferred; recreate user accounts in Supabase."));
             importLocal.setAlignmentX(LEFT_ALIGNMENT);
             importLocal.addActionListener(e -> chooseLocalDataDirectory(ctx));
             add(importLocal);
+            importExcel.setAlignmentX(LEFT_ALIGNMENT);
+            importExcel.addActionListener(e -> chooseExcelFile(ctx));
+            add(Box.createVerticalStrut(6));
+            add(importExcel);
+            excelTemplate.setAlignmentX(LEFT_ALIGNMENT);
+            excelTemplate.addActionListener(e -> saveExcelTemplate());
+            add(Box.createVerticalStrut(6));
+            add(excelTemplate);
             importMessage.setAlignmentX(LEFT_ALIGNMENT);
             importMessage.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
             add(importMessage);
@@ -501,6 +511,67 @@ public final class SettingsPanel extends JPanel {
                     + " local accounts were not transferred; recreate accounts in Users.", false);
         }, error -> {
             importLocal.setEnabled(true);
+            showImport(UiErrors.friendly(error), true);
+        });
+    }
+
+    private void chooseExcelFile(AppContext ctx) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Select an Excel receipt workbook");
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        chooser.setFileFilter(new FileNameExtensionFilter("Excel workbooks (*.xlsx, *.xls)", "xlsx", "xls"));
+        String configured = System.getenv("RMS_DATA_DIR");
+        if (configured != null && !configured.isBlank()) chooser.setCurrentDirectory(Path.of(configured.trim()).toFile());
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+
+        int answer = javax.swing.JOptionPane.showConfirmDialog(this,
+                "This imports receipt details and line items into the current Supabase project. "
+                        + "Existing receipts with the same supplier TIN and receipt number are skipped. "
+                        + "Receipt scans and attachments are not included. Continue?",
+                "Import receipts from Excel", javax.swing.JOptionPane.OK_CANCEL_OPTION,
+                javax.swing.JOptionPane.WARNING_MESSAGE);
+        if (answer != javax.swing.JOptionPane.OK_OPTION) return;
+
+        Path workbook = chooser.getSelectedFile().toPath();
+        importExcel.setEnabled(false);
+        showImport("Importing receipts from Excel…", false);
+        BackgroundTask.run(() -> ctx.localDataImporter.importExcel(workbook), result -> {
+            importExcel.setEnabled(true);
+            showImport("Imported " + result.receiptsImported() + " receipts; skipped "
+                    + result.receiptsSkipped() + " existing receipts. Created " + result.suppliersCreated()
+                    + " suppliers and " + result.projectsCreated() + " projects.", false);
+        }, error -> {
+            importExcel.setEnabled(true);
+            showImport(UiErrors.friendly(error), true);
+        });
+    }
+
+    private void saveExcelTemplate() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Save Excel receipt template");
+        chooser.setSelectedFile(new java.io.File("BRED-receipts-template.xlsx"));
+        chooser.setFileFilter(new FileNameExtensionFilter("Excel workbook (*.xlsx)", "xlsx"));
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+
+        Path target = chooser.getSelectedFile().toPath();
+        if (!target.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".xlsx")) {
+            target = target.resolveSibling(target.getFileName() + ".xlsx");
+        }
+        Path destination = target;
+        if (Files.exists(destination)
+                && javax.swing.JOptionPane.showConfirmDialog(this, "Replace the existing template file?",
+                "Confirm overwrite", javax.swing.JOptionPane.YES_NO_OPTION, javax.swing.JOptionPane.WARNING_MESSAGE)
+                != javax.swing.JOptionPane.YES_OPTION) return;
+        excelTemplate.setEnabled(false);
+        showImport("Creating Excel template…", false);
+        BackgroundTask.run(() -> {
+            com.bred.rms.repositories.supabase.SupabaseLocalDataImporter.writeExcelTemplate(destination);
+            return destination;
+        }, created -> {
+            excelTemplate.setEnabled(true);
+            showImport("Excel template saved to " + created.toAbsolutePath(), false);
+        }, error -> {
+            excelTemplate.setEnabled(true);
             showImport(UiErrors.friendly(error), true);
         });
     }

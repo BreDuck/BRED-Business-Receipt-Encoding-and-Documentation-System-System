@@ -35,6 +35,8 @@ until an administrator approves them in **Users**. An administrator may also con
 
 **Importing old local data:** In the signed-in Supabase app, open **Settings → Move existing local data to Supabase**, select the folder containing `data.json`, and confirm. The import is retryable and does not delete local files. Local passwords are not portable to Supabase Auth; recreate accounts under **Users**. Imported activity is attributed to matching Supabase users by email, and receipts to the importing admin.
 
+**Importing receipts from Excel:** In **Settings**, choose **Create Excel template**, fill in its `Receipts` sheet, then choose **Import receipts from Excel**. `.xlsx` and `.xls` workbooks are supported. Use one row per receipt line item and repeat receipt/supplier details across all rows for that receipt. Required columns are `receipt_no`, `date`, `supplier_name`, `supplier_tin`, `item_description`, `quantity`, and `unit_price`; `type`, supplier address/contact, project details, discount, VAT, and additional charges are optional. Dates may be Excel date cells or `yyyy-MM-dd` text. Unknown suppliers are created by TIN, and projects are created when both project name and code are provided. Existing receipts with the same supplier TIN and receipt number are skipped on re-import. Excel import transfers receipt details and line items, not receipt scans or attachments.
+
 ## Learn more
 - [ARCHITECTURE.md](ARCHITECTURE.md): how the code and the database fit together.
 - `docs/superpowers/`: the design and the build plan this app was made from.
