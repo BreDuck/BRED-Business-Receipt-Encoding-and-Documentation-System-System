@@ -118,6 +118,54 @@ public final class ReportService {
         Files.writeString(file, sb.toString(), StandardCharsets.UTF_8);
     }
 
+    /** Writes the receipts as a real Excel workbook (.xlsx) with numeric money columns. */
+    public void exportXlsx(List<Receipt> list, Path file) throws IOException {
+        Map<UUID, Supplier> supplierById = new HashMap<>();
+        for (Supplier s : suppliers.findAll()) supplierById.put(s.id(), s);
+        Map<UUID, Project> projectById = new HashMap<>();
+        for (Project p : projects.findAll()) projectById.put(p.id(), p);
+
+        try (org.apache.poi.xssf.usermodel.XSSFWorkbook book = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
+            java.io.OutputStream out = Files.newOutputStream(file)) {
+            org.apache.poi.ss.usermodel.Sheet sheet = book.createSheet("Receipts");
+            org.apache.poi.ss.usermodel.Font bold = book.createFont();
+            bold.setBold(true);
+            org.apache.poi.ss.usermodel.CellStyle head = book.createCellStyle();
+            head.setFont(bold);
+            org.apache.poi.ss.usermodel.CellStyle money = book.createCellStyle();
+            money.setDataFormat(book.createDataFormat().getFormat("#,##0.00"));
+
+            org.apache.poi.ss.usermodel.Row header = sheet.createRow(0);
+            for (int i = 0; i < HEADER.length; i++) {
+                org.apache.poi.ss.usermodel.Cell c = header.createCell(i);
+                c.setCellValue(HEADER[i]);
+                c.setCellStyle(head);
+            }
+            int rowNo = 1;
+            for (Receipt r : list) {
+                Supplier s = supplierById.get(r.supplierId());
+                Project p = r.projectId() == null ? null : projectById.get(r.projectId());
+                org.apache.poi.ss.usermodel.Row row = sheet.createRow(rowNo++);
+                row.createCell(0).setCellValue(r.receiptNo() == null ? "" : r.receiptNo());
+                row.createCell(1).setCellValue(r.date().toString());
+                row.createCell(2).setCellValue(r.type().label());
+                row.createCell(3).setCellValue(s == null ? "" : s.businessName());
+                row.createCell(4).setCellValue(s == null ? "" : s.tin());
+                row.createCell(5).setCellValue(p == null ? "" : p.name());
+                java.math.BigDecimal[] amounts = {ReceiptMath.money(r.subtotal()), ReceiptMath.money(r.discount()),
+                        ReceiptMath.money(r.vat()), ReceiptMath.money(r.additionalCharges()), ReceiptMath.money(r.grandTotal())};
+                for (int i = 0; i < amounts.length; i++) {
+                    org.apache.poi.ss.usermodel.Cell c = row.createCell(6 + i);
+                    c.setCellValue(amounts[i].doubleValue());
+                    c.setCellStyle(money);
+                }
+            }
+            for (int i = 0; i < HEADER.length; i++) sheet.autoSizeColumn(i);
+            sheet.createFreezePane(0, 1);
+            book.write(out);
+        }
+    }
+
     /** Escapes a text cell: neutralises spreadsheet formulas, then quotes when needed. */
     static String text(String value) {
         String v = value == null ? "" : value;

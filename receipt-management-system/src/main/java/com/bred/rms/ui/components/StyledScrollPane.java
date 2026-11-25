@@ -16,6 +16,11 @@ import java.awt.RenderingHints;
 
 /** JScrollPane with the application's slim, theme-aware scroll indicators. */
 public final class StyledScrollPane extends JScrollPane {
+    /** Overall scroll bar thickness and the visible thumb thickness, in pixels. */
+    private static final int BAR_SIZE = 12;
+    private static final int THUMB_SIZE = 6;
+    private static final String STYLED_KEY = "bred.slimScrollBar";
+
     public StyledScrollPane(Component view) {
         super(view);
         applyStyle();
@@ -35,10 +40,18 @@ public final class StyledScrollPane extends JScrollPane {
     private static void styleScrollBar(JScrollBar scrollBar) {
         scrollBar.setOpaque(false);
         Dimension size = scrollBar.getOrientation() == JScrollBar.VERTICAL
-                ? new Dimension(8, 0) : new Dimension(0, 8);
+                ? new Dimension(BAR_SIZE, 0) : new Dimension(0, BAR_SIZE);
         scrollBar.setPreferredSize(size);
         scrollBar.setMinimumSize(size);
         scrollBar.setUI(new SlimScrollBarUI());
+        // A look-and-feel change (e.g. the dark/light toggle) installs the default bar again; put ours back
+        // so every scroll bar in the app keeps the same look.
+        if (scrollBar.getClientProperty(STYLED_KEY) == null) {
+            scrollBar.putClientProperty(STYLED_KEY, Boolean.TRUE);
+            scrollBar.addPropertyChangeListener("UI", event -> {
+                if (!(scrollBar.getUI() instanceof SlimScrollBarUI)) scrollBar.setUI(new SlimScrollBarUI());
+            });
+        }
     }
 
     private static final class SlimScrollBarUI extends BasicScrollBarUI {
@@ -69,16 +82,18 @@ public final class StyledScrollPane extends JScrollPane {
 
         @Override
         protected void paintThumb(Graphics graphics, JComponent component, Rectangle bounds) {
+            int width = THUMB_SIZE;   // vertical branch
+            int height = THUMB_SIZE;  // horizontal branch
             if (bounds.isEmpty() || !scrollbar.isEnabled()) return;
             Graphics2D g = (Graphics2D) graphics.create();
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setColor(RmsColors.primary());
             if (scrollbar.getOrientation() == JScrollBar.VERTICAL) {
-                int width = 3;
+                width = THUMB_SIZE;
                 g.fillRoundRect(bounds.x + (bounds.width - width) / 2, bounds.y,
                         width, bounds.height, width, width);
             } else {
-                int height = 3;
+                height = THUMB_SIZE;
                 g.fillRoundRect(bounds.x, bounds.y + (bounds.height - height) / 2,
                         bounds.width, height, height, height);
             }

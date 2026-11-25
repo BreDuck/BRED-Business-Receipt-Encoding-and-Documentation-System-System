@@ -45,6 +45,7 @@ public final class ReportsPanel extends JPanel implements RefreshablePanel {
     private final JTable table = new JTable(model);
     private final JLabel status = new JLabel(" ");
     private final JButton export = new JButton("Export CSV");
+    private final JButton exportExcel = new JButton("Export Excel");
     private int requestId;
 
     /** Builds the panel and runs the default report. */
@@ -53,7 +54,8 @@ public final class ReportsPanel extends JPanel implements RefreshablePanel {
         this.ctx = ctx;
         JButton run = new JButton("Show");
         run.addActionListener(e -> refreshData());
-        export.addActionListener(e -> exportCsv());
+        export.addActionListener(e -> exportReceipts(false));
+        exportExcel.addActionListener(e -> exportReceipts(true));
         JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         bar.add(new JLabel("From"));
         bar.add(from);
@@ -62,6 +64,7 @@ public final class ReportsPanel extends JPanel implements RefreshablePanel {
         bar.add(groupBy);
         bar.add(run);
         bar.add(export);
+        bar.add(exportExcel);
         add(bar, BorderLayout.NORTH);
         table.setRowHeight(28);
         table.setFillsViewportHeight(true);
@@ -115,24 +118,31 @@ public final class ReportsPanel extends JPanel implements RefreshablePanel {
         status.setText(count + " receipt(s), total " + ReceiptMath.format(sum));
     }
 
-    private void exportCsv() {
+    private void exportReceipts(boolean excel) {
         LocalDate[] r = range();
         if (r == null) return;
         JFileChooser chooser = new JFileChooser();
-        chooser.setSelectedFile(new File("receipts.csv"));
+        String ext = excel ? ".xlsx" : ".csv";
+        chooser.setSelectedFile(new File("receipts" + ext));
         if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
-        File target = chooser.getSelectedFile();
+        File chosen = chooser.getSelectedFile();
+        File target = chosen.getName().toLowerCase().endsWith(ext)
+                ? chosen : new File(chosen.getParentFile(), chosen.getName() + ext);
         export.setEnabled(false);
+        exportExcel.setEnabled(false);
         BackgroundTask.run(() -> {
             List<Receipt> receipts = ctx.reports.receipts(r[0], r[1]);
-            ctx.reports.exportCsv(receipts, target.toPath());
+            if (excel) ctx.reports.exportXlsx(receipts, target.toPath());
+            else ctx.reports.exportCsv(receipts, target.toPath());
             return receipts.size();
         }, n -> {
             export.setEnabled(true);
+            exportExcel.setEnabled(true);
             JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), n + " receipt(s) exported to\n" + target.getAbsolutePath(),
                     "Export complete", JOptionPane.INFORMATION_MESSAGE);
         }, e -> {
             export.setEnabled(true);
+            exportExcel.setEnabled(true);
             status.setText(e instanceof java.io.IOException ? "Could not write the file: " + e.getMessage() : UiErrors.friendly(e));
         });
     }

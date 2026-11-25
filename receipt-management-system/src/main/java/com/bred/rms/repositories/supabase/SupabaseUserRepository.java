@@ -5,6 +5,7 @@ import com.bred.rms.models.AccountStatus;
 import com.bred.rms.models.Company;
 import com.bred.rms.models.Role;
 import com.bred.rms.models.User;
+import com.bred.rms.models.ValidationException;
 import com.bred.rms.repositories.RepositoryException;
 import com.bred.rms.repositories.UserRepository;
 import com.bred.rms.supabase.RestClient;
@@ -117,7 +118,7 @@ public final class SupabaseUserRepository implements UserRepository {
         try {
             rest.invokeFunction("admin-delete-user", Map.of("user_id", id.toString()));
         } catch (SupabaseException e) {
-            throw SupabaseErrors.translate(e);
+            throw adminFunctionError("admin-delete-user", e);
         }
     }
 
@@ -125,7 +126,7 @@ public final class SupabaseUserRepository implements UserRepository {
         try {
             rest.invokeFunction("admin-send-password-reset", Map.of("user_id", id.toString()));
         } catch (SupabaseException e) {
-            throw SupabaseErrors.translate(e);
+        throw adminFunctionError("admin-send-password-reset", e);
         }
     }
 
@@ -136,6 +137,23 @@ public final class SupabaseUserRepository implements UserRepository {
                 n.hasNonNull("created_at") ? Json.instant(n, "created_at") : java.time.Instant.EPOCH,
                 n.path("companies").path("name").asText(""),
                 n.hasNonNull("company_id") ? Json.uuid(n, "company_id") : null);
+    }
+
+    /** A 404 from the Functions gateway means the function isn't deployed; a 404 from the function itself is a missing account. */
+    private static RuntimeException adminFunctionError(String function, SupabaseException e) {
+        String m = e.getMessage() == null ? "" : e.getMessage().toLowerCase(java.util.Locale.ROOT);
+        if (e.status() == 404 && m.contains("function")) {
+            return new RepositoryException("The " + function + " Supabase Function is not deployed. From the BRED project "
+                    + "folder, run `npx supabase functions deploy " + function + "`.", false);
+        }
+        if (e.status() == 404) {
+            return new ValidationException(e.getMessage());
+        }
+        if (e.status() == 502 || e.status() == 500) {
+            return new RepositoryException(e.getMessage() == null || e.getMessage().isBlank()
+                 ? "The server had a problem. Please try again." : e.getMessage(), false);
+        }
+        return SupabaseErrors.translate(e);
     }
 
     private static RuntimeException registrationFunctionError(SupabaseException e) {

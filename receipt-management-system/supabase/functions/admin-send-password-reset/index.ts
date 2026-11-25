@@ -43,6 +43,7 @@ function resetEmailHtml(name: string, company: string, actionLink: string, logoU
   const safeLogo = escapeHtml(logoUrl);
   return `<!doctype html>
 <html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light only"></head>
   <body style="margin:0;padding:24px;background:#FFF9E8;font-family:Arial,Helvetica,sans-serif;color:#202124;">
     <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px;margin:0 auto;background:#FFFDF5;border:1px solid #EFE2B7;border-radius:16px;overflow:hidden;">
       <tr>
@@ -58,9 +59,13 @@ function resetEmailHtml(name: string, company: string, actionLink: string, logoU
           <h1 style="margin:0 0 16px;font-size:22px;color:#202124;">Reset your password</h1>
           <p style="margin:0 0 16px;line-height:1.6;">Hello ${safeName},</p>
           <p style="margin:0 0 24px;line-height:1.6;">A password reset was requested for your BRED account. Use the button below to choose a new password. If you did not request this, you can ignore this email.</p>
-          <p style="margin:0 0 24px;text-align:center;">
-            <a href="${safeLink}" style="display:inline-block;padding:13px 24px;border-radius:8px;background:#F7A72E;color:#202124;font-weight:700;text-decoration:none;">Reset password</a>
-          </p>
+          <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto 24px;">
+            <tr>
+              <td align="center" bgcolor="#F7A72E" style="border-radius:8px;background:#F7A72E;">
+                <a href="${safeLink}" target="_blank" style="display:inline-block;padding:13px 24px;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700;color:#202124;text-decoration:none;border:1px solid #F7A72E;border-radius:8px;">Reset password</a>
+              </td>
+            </tr>
+          </table>
           <p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:#747B87;">If the button does not work, copy and paste this link into your browser:</p>
           <p style="margin:0;word-break:break-all;font-size:12px;line-height:1.5;"><a href="${safeLink}" style="color:#6F4000;">${safeLink}</a></p>
         </td>
@@ -180,7 +185,17 @@ Deno.serve(async (request) => {
       type: "recovery",
       email: target.email,
     });
-    const actionLink = recoveryLink?.properties?.action_link;
+
+    // Link to our own static page with the token hash instead of Supabase's one-shot verify URL, so mail
+    // scanners (Outlook, Yahoo, Gmail) can't consume it and it opens the same in every browser.
+    const resetPage = Deno.env.get("PASSWORD_RESET_URL");
+    if (resetPage && !resetPage.startsWith("https://")) {
+      throw new HttpError(500, "PASSWORD_RESET_URL must start with https://");
+    }
+    const hashedToken = recoveryLink?.properties?.hashed_token;
+    const actionLink = resetPage && hashedToken
+      ? `${resetPage}${resetPage.includes("?") ? "&" : "?"}token_hash=${encodeURIComponent(hashedToken)}&type=recovery`
+      : recoveryLink?.properties?.action_link;
     if (linkError || !actionLink) {
       console.error("Failed to generate password recovery link:", linkError);
       throw new HttpError(500, "A password reset link could not be generated.");

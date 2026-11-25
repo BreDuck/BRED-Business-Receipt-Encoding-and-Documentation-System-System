@@ -291,6 +291,28 @@ class SupabaseRepositoriesTest {
     }
 
     @Test
+    void undeployedPasswordResetFunctionExplainsHowToDeployIt() {
+        try (TestEnv env = new TestEnv()) {
+            env.fake.on("POST", "/functions/v1/admin-send-password-reset", 404,
+                    "{\"code\":\"NOT_FOUND\",\"message\":\"Requested function was not found\"}");
+            RepositoryException error = assertThrows(RepositoryException.class,
+                    () -> new SupabaseUserRepository(env.rest).sendPasswordReset(UUID.fromString(SID)));
+            assertTrue(error.getMessage().contains("npx supabase functions deploy admin-send-password-reset"));
+        }
+    }
+
+    @Test
+    void passwordResetForMissingAccountKeepsTheServerMessage() {
+        try (TestEnv env = new TestEnv()) {
+            env.fake.on("POST", "/functions/v1/admin-send-password-reset", 404,
+                    "{\"error\":\"That account no longer exists.\"}");
+            var error = assertThrows(com.bred.rms.models.ValidationException.class,
+                    () -> new SupabaseUserRepository(env.rest).sendPasswordReset(UUID.fromString(SID)));
+            assertTrue(error.getMessage().contains("no longer exists"));
+        }
+    }
+
+    @Test
     void registrationReviewUsesProtectedFunction() {
         try (TestEnv env = new TestEnv()) {
             env.fake.on("POST", "/functions/v1/review-account", 200, "{\"account_status\":\"APPROVED\"}");
