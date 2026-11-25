@@ -13,6 +13,13 @@ import java.awt.CardLayout;
 import java.awt.Dimension;
 import java.awt.Toolkit;
 import java.net.URL;
+import java.awt.AWTException;
+import java.awt.Image;
+import java.awt.MenuItem;
+import java.awt.PopupMenu;
+import java.awt.SystemTray;
+import java.awt.TrayIcon;
+import java.awt.image.BufferedImage;
 
 /** The application window: setup screen, sign-in screen, or the signed-in shell. */
 public final class MainWindow extends JFrame {
@@ -57,6 +64,43 @@ public final class MainWindow extends JFrame {
         login.setHint(ctx.loginHint);
         root.add(login, "login");
         cards.show(root, "login");
+
+        installTray();
+    }
+
+    /** Hides to the system tray on close instead of exiting. Falls back to normal exit if no tray exists. */
+    private void installTray() {
+        if (!SystemTray.isSupported()) return;
+
+        Runnable showWindow = () -> {
+            setVisible(true);
+            setExtendedState(NORMAL);
+            toFront();
+        };
+
+        Image icon = getIconImage();
+        if (icon == null) icon = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+
+        TrayIcon tray = new TrayIcon(icon, "BRED");
+        tray.setImageAutoSize(true);
+
+        MenuItem open = new MenuItem("Open BRED");
+        open.addActionListener(e -> showWindow.run());
+        MenuItem quit = new MenuItem("Quit");
+        quit.addActionListener(e -> System.exit(0));
+
+        PopupMenu menu = new PopupMenu();
+        menu.add(open);
+        menu.add(quit);
+        tray.setPopupMenu(menu);
+        tray.addActionListener(e -> showWindow.run()); // double-click the icon
+
+        try {
+            SystemTray.getSystemTray().add(tray);
+            setDefaultCloseOperation(HIDE_ON_CLOSE); // only now is it safe to hide
+        } catch (AWTException e) {
+            // tray unavailable: keep EXIT_ON_CLOSE
+        }
     }
 
     private void attemptLogin(String email, char[] password, java.util.function.Consumer<String> done) {
