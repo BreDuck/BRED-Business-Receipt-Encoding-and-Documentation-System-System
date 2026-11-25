@@ -11,6 +11,8 @@ import javax.swing.JFrame;
 import javax.swing.JPanel;
 import java.awt.CardLayout;
 import java.awt.Dimension;
+import java.awt.Toolkit;
+import java.net.URL;
 
 /** The application window: setup screen, sign-in screen, or the signed-in shell. */
 public final class MainWindow extends JFrame {
@@ -30,6 +32,10 @@ public final class MainWindow extends JFrame {
         setSize(1180, 760);
         setLocationRelativeTo(null);
         setContentPane(root);
+        URL iconUrl = getClass().getResource("/bred-logo.png");
+        if (iconUrl != null) {
+            setIconImage(Toolkit.getDefaultToolkit().getImage(iconUrl));
+        }
 
         if (ctx == null) {
             login = null;
@@ -81,6 +87,6 @@ public final class MainWindow extends JFrame {
     }
 
     private static final class RegistrationFailure extends RuntimeException {
-        private RegistrationFailure(String message) { super(message); }
-    }
+            private RegistrationFailure(String message) { super(message); }
+        }
 }
