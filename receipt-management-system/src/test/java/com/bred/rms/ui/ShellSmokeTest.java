@@ -1,6 +1,7 @@
 package com.bred.rms.ui;
 
 import com.bred.rms.config.AppConfig;
+import com.bred.rms.config.AppVersion;
 import com.bred.rms.models.Role;
 import com.bred.rms.security.Module;
 import com.bred.rms.ui.auth.LoginPanel;
@@ -29,8 +30,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ShellSmokeTest {
     @Test
-    void loginAndSetupPanelsBuildHeadless() {
-        assertNotNull(new LoginPanel((email, password, done) -> { }));
+    void loginAndSetupPanelsBuildHeadless() throws Exception {
+        LoginPanel login = new LoginPanel((email, password, done) -> { });
+        assertNotNull(login);
+        assertEquals("Version: " + AppVersion.current(), fieldLabel(login, "releaseVersionLabel").getText());
         assertNotNull(new SetupPanel());
     }
 
@@ -68,7 +71,7 @@ class ShellSmokeTest {
                 .findFirst()
                 .orElseThrow();
         assertEquals(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, navigation.getVerticalScrollBarPolicy());
-        assertEquals(8, navigation.getVerticalScrollBar().getPreferredSize().width);
+        assertEquals(12, navigation.getVerticalScrollBar().getPreferredSize().width);
 
         JToggleButton companies = navigationButton(shell, Module.COMPANIES);
         assertTrue(companies.isEnabled());
@@ -83,7 +86,7 @@ class ShellSmokeTest {
     }
 
     @Test
-    void settingsOffersTheSignatureAppearance() {
+    void settingsOffersTheSignatureAppearance() throws Exception {
         SettingsPanel settings = new SettingsPanel(TestContexts.withUser(Role.ENCODER));
         JComboBox<?> appearances = java.util.Arrays.stream(settings.getComponents())
                 .filter(JComboBox.class::isInstance)
@@ -94,6 +97,8 @@ class ShellSmokeTest {
         assertEquals(ThemeManager.Appearance.values().length, appearances.getItemCount());
         assertEquals(ThemeManager.Appearance.BREDUCK_SIGNATURE, appearances.getItemAt(1));
         assertEquals(appearances.getPreferredSize(), appearances.getMaximumSize());
+        assertEquals("Installed version: " + AppVersion.current(),
+                fieldLabel(settings, "releaseVersion").getText());
     }
 
     @Test
@@ -111,8 +116,8 @@ class ShellSmokeTest {
 
             assertEquals(verticalUi, scroll.getVerticalScrollBar().getUI().getClass());
             assertEquals(horizontalUi, scroll.getHorizontalScrollBar().getUI().getClass());
-            assertEquals(8, scroll.getVerticalScrollBar().getPreferredSize().width);
-            assertEquals(8, scroll.getHorizontalScrollBar().getPreferredSize().height);
+            assertEquals(12, scroll.getVerticalScrollBar().getPreferredSize().width);
+            assertEquals(12, scroll.getHorizontalScrollBar().getPreferredSize().height);
         } finally {
             ThemeManager.setAppearance(previousAppearance);
             ThemeManager.apply(previousDark);
@@ -169,6 +174,12 @@ class ShellSmokeTest {
         return (JButton) field.get(settings);
     }
 
+    private static JLabel fieldLabel(Object owner, String name) throws ReflectiveOperationException {
+        var field = owner.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return (JLabel) field.get(owner);
+    }
+
     private static JButton loginSignInButton(LoginPanel login) throws ReflectiveOperationException {
         var field = LoginPanel.class.getDeclaredField("signInButton");
         field.setAccessible(true);
@@ -187,3 +198,4 @@ class ShellSmokeTest {
         return (JLabel) field.get(shell);
     }
 }
+

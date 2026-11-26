@@ -2,6 +2,7 @@ package com.bred.rms.ui.auth;
 
 import com.bred.rms.models.Company;
 import com.bred.rms.models.Role;
+import com.bred.rms.config.AppVersion;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.theme.ThemeManager;
 
@@ -67,6 +68,7 @@ public final class LoginPanel extends JLayeredPane {
     private final JButton createAccountButton = new RoundedButton("Create Account");
     private final JButton themeButton = new RoundedButton();
     private final JButton passwordToggle = new JButton(new EyeIcon(false));
+    private final JLabel releaseVersionLabel = new JLabel("Version: " + AppVersion.current());
     private final RoundedCardPanel card;
     private final JPanel cardWrapper = new JPanel(new GridBagLayout());
     private final Background3D background;
@@ -182,7 +184,25 @@ public final class LoginPanel extends JLayeredPane {
         panel.add(brandFeatureRow("02", "Organize", "Track suppliers and project spending"));
         panel.add(Box.createVerticalStrut(14));
         panel.add(brandFeatureRow("03", "Review", "See totals, VAT, and financial reports"));
+        panel.add(Box.createVerticalGlue());
+        releaseVersionLabel.setForeground(new Color(206, 224, 255));
+        releaseVersionLabel.setName("brandMuted");
+        releaseVersionLabel.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        releaseVersionLabel.setAlignmentX(LEFT_ALIGNMENT);
+        panel.add(releaseVersionLabel);
         return panel;
+    }
+
+    /** Updates the displayed shared release version. */
+    public void setReleaseVersion(String version) {
+        releaseVersionLabel.setText("Version: " + version);
+        releaseVersionLabel.setToolTipText(null);
+    }
+
+    /** Makes a failed version lookup visible instead of implying a stale value is current. */
+    public void setReleaseVersionUnavailable() {
+        releaseVersionLabel.setText("Version unavailable");
+        releaseVersionLabel.setToolTipText("The current release version could not be loaded.");
     }
 
     private JPanel brandFeatureRow(String number, String title, String detail) {

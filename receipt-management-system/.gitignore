@@ -5,3 +5,6 @@ application.properties
 .DS_Store
 rms-data/
 RMS-Data/
+
+releases/
+target/

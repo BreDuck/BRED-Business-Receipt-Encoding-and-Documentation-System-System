@@ -22,6 +22,7 @@ and Maven on the computer that runs the app.
    10. `010_custom_messages.sql`: private direct messages and company-aware teammate contacts
    11. `011_creator_management_and_broadcasts.sql`: Creator company controls, deleted-account message retention, global history and broadcasts
    12. `012_company_group_chat.sql`: company-wide group chat and urgent message labels
+   13. `013_app_releases.sql`: shared current-version display and Creator-only version publishing
 
    Migration 008 creates a `Legacy Company` only when needed and assigns previously unscoped records and profiles to it.
    Existing companies are retained. The Creator can see all companies; Admins and Encoders are restricted to their own.
@@ -29,6 +30,93 @@ and Maven on the computer that runs the app.
    cannot be deleted. Deleting an account keeps its message text in History and replaces its profile references with a
    deleted-user label.
    Migration 012 adds a shared chat for each company; apply it to enable the group room in the desktop app.
+   Migration 013 enables the public version label and the Creator-only version editor in Settings. Publishing changes
+   the shared version number shown to users; it does not download or replace the installed application.
+
+   The updater expects a stable GitHub release asset named `BRED-Setup-<version>.msi` (for example, tag `v1.2.3`
+   uses `BRED-Setup-1.2.3.msi`). BRED stages downloads in a per-user update directory. If GitHub supplies an asset
+   SHA-256 digest in release metadata, BRED verifies it; this is an integrity check, not a Windows publisher signature.
+   The Windows MSI build script is documented below. Creating an MSI does not install or publish it.
+
+## Windows MSI update handoff prerequisites
+
+The current development machine has a registered BRED 1.0.5 installation at `D:\BRED\`. Windows records it under
+HKLM with `WindowsInstaller=1` and an `MsiExec /X` uninstall command, indicating a per-machine MSI installation.
+This is machine-specific evidence, not a package definition for other computers.
+
+The repository does not contain the original MSI or its original build inputs. The MSI's original install source is
+no longer available and its cached MSI could not be located. A repeatable Java 21 jpackage build script is provided
+below; it preserves the required update identity supplied for future MSI builds:
+`7B6F2C1E-4A8D-4F3B-9C1A-5E2D8F0A1B34`; the handoff rejects packages whose MSI metadata does not match it or include
+the installed version in the MSI Upgrade table. The installed package version (1.0.5) also differs from this source
+tree's Maven version (`0.1.0-SNAPSHOT`). Upgrade compatibility is not verified until an actual MSI is inspected and
+tested against the existing installation in an isolated environment.
+
+### Build a Windows MSI
+
+Run this from the `receipt-management-system` project directory on Windows with a Java 21 JDK, Maven, and WiX
+Toolset 3 (`candle.exe` and `light.exe`) available. The script runs `mvn -DskipTests package`, validates the shaded
+JAR's entry point and bundled libraries, builds a jpackage app image, and checks that its launcher and Java runtime
+are present before creating an MSI.
+
+Validate the build inputs and arguments without generating an MSI:
+
+```powershell
+.\scripts\build-windows-msi.ps1 -Version 1.0.6 -ValidateOnly
+```
+
+The eventual command to build a versioned MSI is:
+
+```powershell
+.\scripts\build-windows-msi.ps1 -Version 1.0.6
+```
+
+The version must have three numeric components, each from 0 through 65535. The output is
+`target\installers\BRED-Setup-1.0.6.msi`. Existing output is not overwritten unless `-Force` is explicitly supplied.
+The MSI remains per-machine (the script does not use `--win-per-user-install`) and includes the required UpgradeCode.
+It offers a directory chooser; to target the existing installation, the user must select `D:\BRED`. The build script
+does not install the package, and the directory selection or shared UpgradeCode alone does not establish upgrade
+compatibility.
+
+To inspect a candidate MSI, open it in Orca (from the Windows SDK) and check:
+
+1. In the `Property` table, confirm `ProductVersion`, the generated `ProductCode`, and the required `UpgradeCode`.
+2. In the `Upgrade` table, confirm the `UpgradeCode` and that the version range/action properties include the
+   installed BRED 1.0.5 package as an upgrade target.
+3. Confirm the installer is per-machine and that its interactive directory selection can target `D:\BRED`.
+
+The ProductCode is generated for the package and is not the stable upgrade identity. Preserve the UpgradeCode above.
+Do not install or test a candidate against the production BRED installation. Use an isolated Windows VM with BRED
+1.0.5 installed, choose `D:\BRED` in the interactive MSI, and verify upgrade, cancellation/rollback, app launch,
+version, and user-data preservation before publishing any release.
+
+Before creating or executing an in-place update, recover and verify:
+
+1. The existing MSI's architecture, manufacturer, product naming/version rules, `ALLUSERS` / `MSIINSTALLPERUSER`
+   scope, install directory rules, and Upgrade table behavior. The original package is unavailable, so the new
+   script cannot prove those properties match. Preserve the specified upgrade identity, per-machine scope, and
+   `D:\BRED` selection during isolated testing.
+2. The interactive MSI behavior, including elevation and cancellation. The updater uses the normal interactive
+   `msiexec.exe /i` flow with administrator approval; it does not use silent-install switches.
+3. An isolated Windows test environment with BRED 1.0.5 installed. Verify that the candidate MSI upgrades in place
+   and that cancel, rollback, and failure leave the prior installation usable. Do not test by modifying the production
+   installation.
+
+### User data and configuration preservation
+
+The installed `application.properties` is under `D:\BRED\app\`, inside the installation tree, so an MSI upgrade could
+replace it. The application migrates filesystem-based configuration to `%APPDATA%\BRED\application.properties` only
+when the destination does not exist, verifies that the copy can be read, prefers the external file on later launches,
+and retains the original. Do not log configuration values.
+
+In local-data mode, BRED stores `data.json` in the selected data directory (by default `%USERPROFILE%\RMS-Data`, or
+the directory selected by `RMS_DATA_DIR`); receipt attachments are stored in that directory's `attachments` folder.
+These paths are outside `D:\BRED` and must remain untouched. Java Preferences are also stored outside the install
+tree. Supabase-backed records remain remote; no database migration or production data change is part of installer
+work.
+
+No installer launch, installation, restart, or change to the installed BRED application has been made. Proceed only
+after the MSI upgrade identity and compatibility have been recovered and verified, and after explicit approval.
 
 ## 3. Create a Creator account
 1. **Authentication → Users → Add user → Create new user.** Enter your email and a password, and tick **Auto Confirm User**.

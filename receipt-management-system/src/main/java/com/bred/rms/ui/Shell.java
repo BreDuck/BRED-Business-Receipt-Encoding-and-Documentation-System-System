@@ -23,6 +23,8 @@ import com.bred.rms.ui.receipts.ReceiptDirectoryPanel;
 import com.bred.rms.ui.receipts.ReceiptFormDialog;
 import com.bred.rms.ui.theme.ThemeManager;
 import com.bred.rms.utils.BackgroundTask;
+import com.bred.rms.updates.UpdatePreferences;
+import com.bred.rms.updates.UpdateWorkflow;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -64,6 +66,8 @@ import java.util.function.Consumer;
 /** The signed-in frame: sidebar menu (filtered by role), header with user info, and the active screen. */
 public final class Shell extends JPanel {
     private final AppContext ctx;
+    private final UpdatePreferences updatePreferences;
+    private final UpdateWorkflow updateWorkflow;
     private final List<Module> modules;
     private final CardLayout cards = new CardLayout();
     private final JPanel content = new JPanel(cards);
@@ -85,8 +89,15 @@ public final class Shell extends JPanel {
     private boolean broadcastToastVisible;
 
     public Shell(AppContext ctx, Runnable onSignOut) {
+        this(ctx, onSignOut, null, null);
+    }
+
+    public Shell(AppContext ctx, Runnable onSignOut, UpdatePreferences updatePreferences,
+                 UpdateWorkflow updateWorkflow) {
         super(new BorderLayout());
         this.ctx = ctx;
+        this.updatePreferences = updatePreferences;
+        this.updateWorkflow = updateWorkflow;
         User user = ctx.currentUser.get();
         Role role = user == null ? Role.ENCODER : user.role();
         this.modules = AccessPolicy.modulesFor(role);
@@ -153,7 +164,10 @@ public final class Shell extends JPanel {
             case COMPANIES -> new CompanyPanel(ctx);
             case HISTORY -> new HistoryPanel(ctx);
             case SETTINGS -> {
-                JScrollPane scroll = new StyledScrollPane(new SettingsPanel(ctx));
+                SettingsPanel settings = updateWorkflow == null
+                        ? new SettingsPanel(ctx)
+                        : new SettingsPanel(ctx, updatePreferences, null, updateWorkflow);
+                JScrollPane scroll = new StyledScrollPane(settings);
                 scroll.getVerticalScrollBar().setUnitIncrement(40);
                 yield scroll;
             }

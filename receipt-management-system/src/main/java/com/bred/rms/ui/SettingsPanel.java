@@ -1,6 +1,7 @@
 package com.bred.rms.ui;
 
 import com.bred.rms.config.AppContext;
+import com.bred.rms.config.AppVersion;
 import com.bred.rms.models.BugReport;
 import com.bred.rms.models.Role;
 import com.bred.rms.models.User;
@@ -8,12 +9,23 @@ import com.bred.rms.ui.components.UserAvatar;
 import com.bred.rms.ui.components.StyledScrollPane;
 import com.bred.rms.ui.theme.RmsColors;
 import com.bred.rms.ui.theme.ThemeManager;
+import com.bred.rms.updates.GitHubReleaseClient;
+import com.bred.rms.updates.UpdateCheckException;
+import com.bred.rms.updates.UpdateChecker;
+import com.bred.rms.updates.UpdateDownloadManager;
+import com.bred.rms.updates.UpdateDownloadException;
+import com.bred.rms.updates.UpdateInfo;
+import com.bred.rms.updates.UpdateMode;
+import com.bred.rms.updates.UpdatePreferences;
+import com.bred.rms.updates.UpdateWorkflow;
 import com.bred.rms.utils.BackgroundTask;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.ButtonGroup;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
@@ -23,6 +35,8 @@ import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
+import javax.swing.JProgressBar;
+import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -47,7 +61,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /** Account details, appearance options and "change my password". */
 public final class SettingsPanel extends JPanel {
@@ -70,11 +88,50 @@ public final class SettingsPanel extends JPanel {
     private final DefaultListModel<BugReport> reports = new DefaultListModel<>();
     private final JList<BugReport> reportList = new JList<>(reports);
     private final JTextArea reportDetails = new JTextArea(5, 42);
+    private final JLabel releaseVersion = new JLabel(" ");
+    private final JLabel releaseMessage = new JLabel(" ");
+    private final JTextField releaseInput = new JTextField(16);
+    private final JButton publishRelease = new JButton("Update version");
+    private final UpdatePreferences updatePreferences;
+    private final Supplier<CompletableFuture<Optional<UpdateInfo>>> updateCheck;
+    private final JLabel installedVersion = new JLabel("Current Version: " + AppVersion.current());
+    private final JLabel updateStatus = new JLabel(" ");
+    private final JLabel lastChecked = new JLabel(" ");
+    private final JRadioButton askBeforeInstalling = new JRadioButton("Ask Before Installing (Recommended)");
+    private final JRadioButton automaticUpdates = new JRadioButton("Automatic Updates");
+    private final JCheckBox automaticallyCheck = new JCheckBox("Automatically Check for Updates");
+    private final JButton checkForUpdates = new JButton("Check for Updates");
+    private final JLabel downloadProgressLabel = new JLabel(" ");
+    private final JProgressBar downloadProgressBar = new JProgressBar(0, 100);
+    private final JButton cancelDownload = new JButton("Cancel download");
+    private final UpdateWorkflow updateWorkflow;
+    private UpdateDownloadManager.ProgressSubscription downloadProgressSubscription;
+    private boolean updateStatusError;
     private final Consumer<Boolean> themeListener = dark -> applyTheme();
     private Path selectedImage;
 
     /** Builds the settings screen for the signed-in user. */
     public SettingsPanel(AppContext ctx) {
+        this(ctx, new UpdatePreferences(), null, null);
+    }
+
+    SettingsPanel(AppContext ctx, UpdatePreferences updatePreferences,
+                  Supplier<CompletableFuture<Optional<UpdateInfo>>> updateCheck) {
+        this(ctx, updatePreferences, updateCheck, null);
+    }
+
+    SettingsPanel(AppContext ctx, UpdatePreferences updatePreferences,
+                  Supplier<CompletableFuture<Optional<UpdateInfo>>> updateCheck, UpdateWorkflow updateWorkflow) {
+        this.updatePreferences = Objects.requireNonNull(updatePreferences, "updatePreferences");
+        this.updateWorkflow = updateWorkflow;
+        if (updateWorkflow != null) {
+            this.updateCheck = updateWorkflow::checkManually;
+        } else if (updateCheck != null) {
+            this.updateCheck = updateCheck;
+        } else {
+            this.updateCheck = new UpdateChecker(AppVersion.current(), new GitHubReleaseClient(),
+                    this.updatePreferences)::checkForUpdate;
+        }
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         User u = ctx.currentUser.get();
         add(heading("Account"));
@@ -122,6 +179,8 @@ public final class SettingsPanel extends JPanel {
                 ThemeManager.setAppearance((ThemeManager.Appearance) appearances.getSelectedItem()));
         add(appearances);
         add(Box.createVerticalStrut(20));
+        addUpdateSection();
+        add(Box.createVerticalStrut(20));
         add(heading("Change my password"));
         add(labelled("New password (min. 6)", newPassword));
         add(labelled("Repeat new password", confirm));
@@ -142,12 +201,20 @@ public final class SettingsPanel extends JPanel {
     public void addNotify() {
         super.addNotify();
         ThemeManager.addThemeListener(themeListener);
+        if (updateWorkflow != null && downloadProgressSubscription == null) {
+            downloadProgressSubscription = updateWorkflow.addProgressListener(progress ->
+                    javax.swing.SwingUtilities.invokeLater(() -> showDownloadProgress(progress)));
+        }
         applyTheme();
     }
 
     @Override
     public void removeNotify() {
         ThemeManager.removeThemeListener(themeListener);
+        if (downloadProgressSubscription != null) {
+            downloadProgressSubscription.close();
+            downloadProgressSubscription = null;
+        }
         super.removeNotify();
     }
 
@@ -155,6 +222,18 @@ public final class SettingsPanel extends JPanel {
         applyTextTheme(this);
         reportSubtitle.setForeground(RmsColors.SECONDARY_TEXT);
         imageName.setForeground(RmsColors.SECONDARY_TEXT);
+        releaseMessage.setForeground(RmsColors.SECONDARY_TEXT);
+        releaseInput.setForeground(RmsColors.text());
+        releaseInput.setCaretColor(RmsColors.primary());
+        installedVersion.setForeground(RmsColors.text());
+        lastChecked.setForeground(RmsColors.SECONDARY_TEXT);
+        askBeforeInstalling.setForeground(RmsColors.text());
+        automaticUpdates.setForeground(RmsColors.text());
+        automaticallyCheck.setForeground(RmsColors.text());
+        checkForUpdates.setForeground(RmsColors.text());
+        cancelDownload.setForeground(RmsColors.text());
+        downloadProgressLabel.setForeground(RmsColors.SECONDARY_TEXT);
+        updateStatus.setForeground(updateStatusError ? RmsColors.DANGER : RmsColors.SECONDARY_TEXT);
         reportTitle.setCaretColor(RmsColors.primary());
         reportDescription.setForeground(RmsColors.text());
         reportDescription.setCaretColor(RmsColors.primary());
@@ -168,7 +247,8 @@ public final class SettingsPanel extends JPanel {
 
     private void applyTextTheme(Component component) {
         if (component instanceof JLabel label && label != message && label != importMessage
-                && label != reportMessage && label != imageName) {
+                && label != reportMessage && label != releaseMessage && label != updateStatus
+                && label != imageName) {
             label.setForeground(RmsColors.text());
         } else if (component instanceof javax.swing.text.JTextComponent text) {
             text.setForeground(RmsColors.text());
@@ -180,6 +260,190 @@ public final class SettingsPanel extends JPanel {
         }
     }
 
+    private void addUpdateSection() {
+        add(heading("Application Updates"));
+        installedVersion.setAlignmentX(LEFT_ALIGNMENT);
+        add(installedVersion);
+        add(Box.createVerticalStrut(8));
+
+        JLabel preferenceLabel = line("Update Preference");
+        preferenceLabel.setFont(preferenceLabel.getFont().deriveFont(Font.BOLD));
+        preferenceLabel.setAlignmentX(LEFT_ALIGNMENT);
+        add(preferenceLabel);
+
+        ButtonGroup modes = new ButtonGroup();
+        modes.add(askBeforeInstalling);
+        modes.add(automaticUpdates);
+        askBeforeInstalling.setOpaque(false);
+        automaticUpdates.setOpaque(false);
+        askBeforeInstalling.setAlignmentX(LEFT_ALIGNMENT);
+        automaticUpdates.setAlignmentX(LEFT_ALIGNMENT);
+        askBeforeInstalling.setSelected(updatePreferences.mode() == UpdateMode.ASK);
+        automaticUpdates.setSelected(updatePreferences.mode() == UpdateMode.AUTOMATIC);
+        askBeforeInstalling.addActionListener(e -> updatePreferences.setMode(UpdateMode.ASK));
+        automaticUpdates.addActionListener(e -> updatePreferences.setMode(UpdateMode.AUTOMATIC));
+        add(askBeforeInstalling);
+        add(automaticUpdates);
+
+        automaticallyCheck.setOpaque(false);
+        automaticallyCheck.setAlignmentX(LEFT_ALIGNMENT);
+        automaticallyCheck.setSelected(updatePreferences.automaticallyCheckForUpdates());
+        automaticallyCheck.addActionListener(e ->
+                updatePreferences.setAutomaticallyCheckForUpdates(automaticallyCheck.isSelected()));
+        add(Box.createVerticalStrut(4));
+        add(automaticallyCheck);
+
+        lastChecked.setText("Last Checked: " + formatLastChecked(updatePreferences.lastAttemptedCheck()));
+        lastChecked.setAlignmentX(LEFT_ALIGNMENT);
+        lastChecked.setFont(lastChecked.getFont().deriveFont(12f));
+        add(Box.createVerticalStrut(4));
+        add(lastChecked);
+
+        checkForUpdates.setAlignmentX(LEFT_ALIGNMENT);
+        checkForUpdates.addActionListener(e -> checkForUpdates());
+        add(Box.createVerticalStrut(8));
+        add(checkForUpdates);
+
+        updateStatus.setAlignmentX(LEFT_ALIGNMENT);
+        updateStatus.setFont(updateStatus.getFont().deriveFont(12f));
+        add(Box.createVerticalStrut(4));
+        add(updateStatus);
+
+        downloadProgressLabel.setAlignmentX(LEFT_ALIGNMENT);
+        downloadProgressLabel.setFont(downloadProgressLabel.getFont().deriveFont(12f));
+        downloadProgressBar.setAlignmentX(LEFT_ALIGNMENT);
+        downloadProgressBar.setStringPainted(true);
+        downloadProgressBar.setVisible(false);
+        cancelDownload.setAlignmentX(LEFT_ALIGNMENT);
+        cancelDownload.setVisible(false);
+        cancelDownload.addActionListener(e -> cancelUpdateDownload());
+        add(Box.createVerticalStrut(4));
+        add(downloadProgressLabel);
+        add(downloadProgressBar);
+        add(cancelDownload);
+    }
+
+    private void checkForUpdates() {
+        checkForUpdates.setEnabled(false);
+        showUpdateStatus("Checking for updates…", false);
+        CompletableFuture<Optional<UpdateInfo>> check = CompletableFuture
+                .supplyAsync(updateCheck::get)
+                .thenCompose(result -> Objects.requireNonNull(result, "update check result"));
+        check.whenComplete((result, error) -> javax.swing.SwingUtilities.invokeLater(
+                () -> completeUpdateCheck(result, error)));
+    }
+
+    private void completeUpdateCheck(Optional<UpdateInfo> result, Throwable error) {
+        checkForUpdates.setEnabled(true);
+        lastChecked.setText("Last Checked: " + formatLastChecked(updatePreferences.lastAttemptedCheck()));
+        if (error != null) {
+            showUpdateStatus(friendlyUpdateError(error), true);
+        } else if (result == null) {
+            showUpdateStatus("The update check returned an invalid response.", true);
+        } else if (result.isEmpty()) {
+            showUpdateStatus("You're up to date (version " + AppVersion.current() + ").", false);
+        } else {
+            UpdateInfo available = result.orElseThrow();
+            showUpdateStatus("Version " + available.latestVersion() + " is available.", false);
+            offerOrStartDownload(available);
+        }
+    }
+
+    private void offerOrStartDownload(UpdateInfo update) {
+        if (updateWorkflow == null) return;
+        try {
+            UpdateWorkflow.Detection detection = updateWorkflow.handleDetectedUpdate(update);
+            if (detection.decision() == UpdateWorkflow.Decision.ASK_USER) {
+                int answer = javax.swing.JOptionPane.showConfirmDialog(this,
+                        update.releaseName() + " is available.\nDownload " + update.installerFilename()
+                                + " now? BRED will not install or restart automatically.",
+                        "BRED update available", javax.swing.JOptionPane.YES_NO_OPTION,
+                        javax.swing.JOptionPane.INFORMATION_MESSAGE);
+                if (answer == javax.swing.JOptionPane.YES_OPTION) updateWorkflow.downloadNow(update);
+            } else {
+                showUpdateStatus("Downloading version " + update.latestVersion() + " in the background.", false);
+            }
+        } catch (RuntimeException error) {
+            showUpdateStatus(friendlyUpdateError(error), true);
+        }
+    }
+
+    private void cancelUpdateDownload() {
+        if (updateWorkflow == null) return;
+        updateWorkflow.currentProgress().ifPresent(progress -> updateWorkflow.cancel(progress.version()));
+    }
+
+    private void showDownloadProgress(UpdateDownloadManager.DownloadProgress progress) {
+        downloadProgressLabel.setText(downloadLabel(progress));
+        boolean active = progress.status() == UpdateDownloadManager.Status.DOWNLOADING
+                || progress.status() == UpdateDownloadManager.Status.VERIFYING;
+        downloadProgressBar.setVisible(active || progress.status() == UpdateDownloadManager.Status.READY);
+        cancelDownload.setVisible(active);
+        checkForUpdates.setEnabled(!active);
+        downloadProgressBar.setIndeterminate(active && progress.totalBytes().isEmpty());
+        if (progress.totalBytes().isPresent()) {
+            downloadProgressBar.setValue(progress.percentage());
+            downloadProgressBar.setString(progress.percentage() + "%");
+        } else if (active) {
+            downloadProgressBar.setString("Downloading...");
+        }
+        if (progress.status() == UpdateDownloadManager.Status.READY) {
+            downloadProgressBar.setIndeterminate(false);
+            downloadProgressBar.setValue(100);
+            downloadProgressBar.setString("Ready");
+            showUpdateStatus(progress.message(), false);
+        } else if (progress.status() == UpdateDownloadManager.Status.FAILED) {
+            downloadProgressBar.setIndeterminate(false);
+            downloadProgressBar.setVisible(false);
+            showUpdateStatus(progress.message(), true);
+        } else if (progress.status() == UpdateDownloadManager.Status.CANCELLED) {
+            downloadProgressBar.setIndeterminate(false);
+            downloadProgressBar.setVisible(false);
+            showUpdateStatus(progress.message(), false);
+        } else if (progress.status() == UpdateDownloadManager.Status.DOWNLOADING) {
+            showUpdateStatus("Downloading version " + progress.version() + "...", false);
+        } else {
+            showUpdateStatus("Verifying downloaded MSI installer...", false);
+        }
+        revalidate();
+    }
+
+    private static String downloadLabel(UpdateDownloadManager.DownloadProgress progress) {
+        String downloaded = formatBytes(progress.downloadedBytes());
+        String total = progress.totalBytes().isPresent() ? " of " + formatBytes(progress.totalBytes().getAsLong()) : "";
+        return progress.status() == UpdateDownloadManager.Status.READY
+                ? progress.installerFilename() + " — " + progress.message()
+                : "MSI installer: " + progress.installerFilename() + " · " + downloaded + total;
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format(java.util.Locale.ROOT, "%.1f KB", bytes / 1024.0);
+        return String.format(java.util.Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0));
+    }
+
+    private static String friendlyUpdateError(Throwable error) {
+        Throwable cause = error;
+        while ((cause instanceof java.util.concurrent.CompletionException
+                || cause instanceof java.util.concurrent.ExecutionException) && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        if ((cause instanceof UpdateCheckException || cause instanceof UpdateDownloadException)
+                && cause.getMessage() != null) return cause.getMessage();
+        return "Unable to check for updates. Check your internet connection and try again.";
+    }
+
+    private static String formatLastChecked(java.time.Instant checkedAt) {
+        if (checkedAt == null) return "Never";
+        return java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM)
+                .withZone(java.time.ZoneId.systemDefault()).format(checkedAt);
+    }
+
+    private void showUpdateStatus(String text, boolean bad) {
+        updateStatusError = bad;
+        updateStatus.setForeground(bad ? RmsColors.DANGER : RmsColors.SECONDARY_TEXT);
+        updateStatus.setText(text);
+    }
 
     private void addContacts(AppContext ctx, User user) {
         JPanel contacts = new JPanel(new BorderLayout(0, 12));
@@ -222,6 +486,7 @@ public final class SettingsPanel extends JPanel {
         copyCentered.add(contactCopy, centre);
         creatorContact.add(copyCentered, BorderLayout.CENTER);
         contactColumn.add(creatorContact);
+        addVersionSection(ctx, user, contactColumn);
 
         JPanel reportForm = new RoundedReportCard();
         reportForm.setLayout(new BoxLayout(reportForm, BoxLayout.Y_AXIS));
@@ -355,6 +620,66 @@ public final class SettingsPanel extends JPanel {
         body.add(contactColumn);
         contacts.add(body, BorderLayout.CENTER);
         add(contacts);
+    }
+
+    private void addVersionSection(AppContext ctx, User user, JPanel contactColumn) {
+        contactColumn.add(Box.createVerticalStrut(18));
+        contactColumn.add(heading("Version"));
+        releaseVersion.setAlignmentX(LEFT_ALIGNMENT);
+        contactColumn.add(releaseVersion);
+
+        if (ctx.appReleases == null) {
+            releaseVersion.setText("Installed version: " + AppVersion.current());
+            releaseMessage.setText("Shared release versions require a Supabase connection.");
+        } else {
+            releaseVersion.setText("Loading current version…");
+            loadCurrentRelease(ctx);
+        }
+
+        if (ctx.appReleases != null && user != null && user.role() == Role.CREATOR) {
+            JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+            controls.setOpaque(false);
+            controls.setAlignmentX(LEFT_ALIGNMENT);
+            releaseInput.setToolTipText("Enter a version such as 1.2.3");
+            releaseInput.setMaximumSize(new Dimension(220, 36));
+            styleReportField(releaseInput);
+            controls.add(releaseInput);
+            publishRelease.setAlignmentX(LEFT_ALIGNMENT);
+            publishRelease.addActionListener(e -> publishRelease(ctx));
+            controls.add(publishRelease);
+            contactColumn.add(Box.createVerticalStrut(8));
+            contactColumn.add(controls);
+        } else if (ctx.appReleases != null) {
+            releaseMessage.setText("Only the Creator can publish a new version.");
+        }
+
+        releaseMessage.setAlignmentX(LEFT_ALIGNMENT);
+        releaseMessage.setFont(releaseMessage.getFont().deriveFont(12f));
+        contactColumn.add(releaseMessage);
+    }
+
+    private void loadCurrentRelease(AppContext ctx) {
+        BackgroundTask.run(ctx.appReleases::current, current -> {
+            releaseVersion.setText("Current version: " + current.version());
+            if (releaseInput.getText().isBlank()) releaseInput.setText(current.version());
+        }, error -> {
+            releaseVersion.setText("Current version unavailable.");
+            showRelease(UiErrors.friendly(error), true);
+        });
+    }
+
+    private void publishRelease(AppContext ctx) {
+        publishRelease.setEnabled(false);
+        showRelease("Publishing version…", false);
+        String version = releaseInput.getText();
+        BackgroundTask.run(() -> ctx.appReleases.publish(version), published -> {
+            publishRelease.setEnabled(true);
+            releaseVersion.setText("Current version: " + published.version());
+            showRelease("Version updated for all users.", false);
+        }, error -> {
+            publishRelease.setEnabled(true);
+            showRelease(UiErrors.friendly(error), true);
+        });
     }
 
     private void chooseReportImage() {
@@ -597,6 +922,11 @@ public final class SettingsPanel extends JPanel {
     private void showReport(String text, boolean bad) {
         reportMessage.setForeground(bad ? RmsColors.DANGER : RmsColors.SUCCESS);
         reportMessage.setText(text);
+    }
+
+    private void showRelease(String text, boolean bad) {
+        releaseMessage.setForeground(bad ? RmsColors.DANGER : RmsColors.SUCCESS);
+        releaseMessage.setText(text);
     }
 
     private static JLabel formLabel(String text) {
