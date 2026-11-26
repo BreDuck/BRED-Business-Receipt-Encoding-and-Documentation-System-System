@@ -102,8 +102,8 @@ class SettingsUpdateSectionTest {
 
             CompletableFuture<Optional<UpdateInfo>> available = CompletableFuture.completedFuture(
                     Optional.of(new UpdateInfo("1.0.0", "1.1.0", "BRED 1.1.0", "Notes",
-                            URI.create("https://github.com/Clarkisbred/receipt-management-system/releases/tag/v1.1.0"),
-                            URI.create("https://github.com/Clarkisbred/receipt-management-system/releases/download/v1.1.0/BRED-Setup-1.1.0.msi"),
+                            URI.create("https://github.com/Clarkisbred/BRED-Business-Receipt-Encoding-and-Documentation-System-System/releases/tag/v1.1.0"),
+                            URI.create("https://github.com/Clarkisbred/BRED-Business-Receipt-Encoding-and-Documentation-System-System/releases/download/v1.1.0/BRED-Setup-1.1.0.msi"),
                             "BRED-Setup-1.1.0.msi", Optional.of(Instant.parse("2026-11-25T10:00:00Z")))));
             SwingUtilities.invokeAndWait(() -> {
                 panel[0].removeNotify();
