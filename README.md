@@ -55,6 +55,8 @@ BRED aims to improve receipt documentation, supplier record management, project 
 - **Database Storage:** Local Database / Supabase
 - **File Management:** Receipt Images and PDF Attachments
 
+  ## AI chat
+
 ## [⬇ Download BRED for Windows](https://github.com/Clarkisbred/<your-repo-name>/releases/latest)
 ---
 
