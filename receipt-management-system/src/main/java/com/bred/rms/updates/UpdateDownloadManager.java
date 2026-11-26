@@ -86,6 +86,7 @@ public final class UpdateDownloadManager implements AutoCloseable {
             return new DownloadJob(update);
         });
         if (created.get()) job.start();
+        else job.replayReady();
         return job.handle;
     }
 
@@ -264,6 +265,7 @@ public final class UpdateDownloadManager implements AutoCloseable {
         private volatile Future<?> worker;
         private volatile InputStream activeStream;
         private volatile Status status;
+        private volatile DownloadProgress readyProgress;
         private volatile boolean running;
 
         private DownloadJob(UpdateInfo update) {
@@ -297,6 +299,11 @@ public final class UpdateDownloadManager implements AutoCloseable {
                 completion.completeExceptionally(new CancellationException("The update download was cancelled."));
             }
             return true;
+        }
+
+        private void replayReady() {
+            DownloadProgress progress = readyProgress;
+            if (progress != null) UpdateDownloadManager.this.publish(progress);
         }
 
         private void run() {
@@ -455,9 +462,11 @@ public final class UpdateDownloadManager implements AutoCloseable {
                     update.currentVersion(), update.latestVersion(), size, actualSha256, expectedSha256,
                     checksumVerified);
             OptionalLong total = OptionalLong.of(size);
-            publish(new DownloadProgress(Status.READY, update.currentVersion(), update.latestVersion(),
+            DownloadProgress progress = new DownloadProgress(Status.READY, update.currentVersion(), update.latestVersion(),
                     update.installerFilename(), size, total, 100, expectedSha256.isPresent(), checksumVerified,
-                    message, Optional.of(result)));
+                    message, Optional.of(result));
+            readyProgress = progress;
+            publish(progress);
             completion.complete(result);
         }
 

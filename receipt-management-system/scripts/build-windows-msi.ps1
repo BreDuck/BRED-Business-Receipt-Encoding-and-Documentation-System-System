@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [string]$Version,
@@ -75,6 +75,9 @@ finally {
 $mavenArtifact = [string]$pom.project.artifactId
 $mavenVersion = [string]$pom.project.version
 $shadedJar = Join-Path $targetPath "$mavenArtifact-$mavenVersion-shaded.jar"
+if (-not (Test-Path -LiteralPath $shadedJar -PathType Leaf)) {
+    $shadedJar = Join-Path $targetPath "$mavenArtifact-$mavenVersion.jar"
+}
 if (-not (Test-Path -LiteralPath $shadedJar -PathType Leaf)) {
     throw "Expected shaded application JAR was not produced: $shadedJar"
 }

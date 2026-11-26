@@ -164,7 +164,7 @@ class WindowsInstallerHandoffTest {
         downloads = new UpdateDownloadManager(tempDir.resolve("staging"), HttpClient.newHttpClient(), executor,
                 uri -> true, uri -> uri.getHost().equals("127.0.0.1"));
         UpdateInfo info = new UpdateInfo("1.2.2", "1.2.3", "BRED 1.2.3", "release notes",
-                URI.create("https://github.com/Clarkisbred/receipt-management-system/releases/tag/v1.2.3"),
+                URI.create("https://github.com/Clarkisbred/BRED-Business-Receipt-Encoding-and-Documentation-System-System/releases/tag/v1.2.3"),
                 URI.create("http://127.0.0.1:" + server.getAddress().getPort()
                         + "/download/v1.2.3/BRED-Setup-1.2.3.msi"),
                 "BRED-Setup-1.2.3.msi", Optional.empty(), OptionalLong.of(content.length),

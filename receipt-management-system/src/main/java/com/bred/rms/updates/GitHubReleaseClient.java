@@ -19,9 +19,10 @@ import java.util.concurrent.CompletionException;
 /** Asynchronously retrieves and validates BRED's latest published GitHub release. */
 public final class GitHubReleaseClient {
     public static final URI LATEST_RELEASE_API = URI.create(
-            "https://api.github.com/repos/Clarkisbred/receipt-management-system/releases/latest");
+            "https://api.github.com/repos/Clarkisbred/BRED-Business-Receipt-Encoding-and-Documentation-System-System/releases/latest");
 
-    private static final String REPOSITORY_RELEASE_PATH = "/Clarkisbred/receipt-management-system/releases/";
+    private static final String REPOSITORY_RELEASE_PATH =
+            "/Clarkisbred/BRED-Business-Receipt-Encoding-and-Documentation-System-System/releases/";
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final HttpClient http;

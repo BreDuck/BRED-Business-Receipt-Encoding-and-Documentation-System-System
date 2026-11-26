@@ -167,6 +167,10 @@ class UpdateDownloadManagerTest {
         AtomicInteger requests = startServer(200, installer, installer.length);
         manager = createManager(uri -> true, uri -> uri.getHost().equals("127.0.0.1"));
         UpdateInfo info = update(installer, null);
+        AtomicInteger readyEvents = new AtomicInteger();
+        manager.addProgressListener(progress -> {
+            if (progress.status() == UpdateDownloadManager.Status.READY) readyEvents.incrementAndGet();
+        });
 
         UpdateDownloadManager.DownloadHandle first = manager.download(info);
         UpdateDownloadManager.DownloadHandle duplicate = manager.download(info);
@@ -177,6 +181,10 @@ class UpdateDownloadManagerTest {
         assertEquals(1, requests.get());
         assertFalse(first.completion().join().checksumVerified());
         assertTrue(manager.currentProgress().orElseThrow().message().contains("did not provide"));
+        assertEquals(1, readyEvents.get());
+
+        assertSame(first, manager.download(info));
+        assertEquals(2, readyEvents.get());
     }
 
     @Test
@@ -243,7 +251,7 @@ class UpdateDownloadManagerTest {
 
     private UpdateInfo updateWithoutExpectedSize(byte[] installer) {
         return new UpdateInfo("1.2.2", "1.2.3", "BRED 1.2.3", "Notes",
-                URI.create("https://github.com/Clarkisbred/receipt-management-system/releases/tag/v1.2.3"),
+                URI.create("https://github.com/Clarkisbred/BRED-Business-Receipt-Encoding-and-Documentation-System-System/releases/tag/v1.2.3"),
                 URI.create("http://127.0.0.1:" + server.getAddress().getPort()
                         + "/download/v1.2.3/BRED-Setup-1.2.3.msi"),
                 "BRED-Setup-1.2.3.msi", Optional.empty(), OptionalLong.empty(), Optional.empty());
@@ -256,7 +264,7 @@ class UpdateDownloadManagerTest {
 
     private UpdateInfo update(byte[] installer, String checksum, String filename, URI url) {
         return new UpdateInfo("1.2.2", "1.2.3", "BRED 1.2.3", "Notes",
-                URI.create("https://github.com/Clarkisbred/receipt-management-system/releases/tag/v1.2.3"),
+                URI.create("https://github.com/Clarkisbred/BRED-Business-Receipt-Encoding-and-Documentation-System-System/releases/tag/v1.2.3"),
                 url, filename, Optional.empty(), OptionalLong.of(installer.length),
                 Optional.ofNullable(checksum));
     }

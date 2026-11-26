@@ -138,7 +138,7 @@ class GitHubReleaseClientTest {
                   "body":"Release notes",
                   "draft":%s,
                   "prerelease":%s,
-                  "html_url":"https://github.com/Clarkisbred/receipt-management-system/releases/tag/%s",
+                  "html_url":"https://github.com/Clarkisbred/BRED-Business-Receipt-Encoding-and-Documentation-System-System/releases/tag/%s",
                   "published_at":"2026-11-25T10:00:00Z",
                   "assets":[{"name":"%s","state":"%s","size":128,"digest":"sha256:%s","browser_download_url":"%s"}]
                 }
@@ -146,7 +146,7 @@ class GitHubReleaseClientTest {
     }
 
     private static String trustedInstaller(String tag, String filename) {
-        return "https://github.com/Clarkisbred/receipt-management-system/releases/download/"
+        return "https://github.com/Clarkisbred/BRED-Business-Receipt-Encoding-and-Documentation-System-System/releases/download/"
                 + tag + "/" + filename;
     }
 

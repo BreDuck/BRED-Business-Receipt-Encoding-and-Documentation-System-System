@@ -35,6 +35,9 @@ public record UpdateInfo(String currentVersion, String latestVersion, String rel
         installerSha256.ifPresent(value -> {
             if (!value.matches("[0-9a-fA-F]{64}")) throw new IllegalArgumentException("installerSha256");
         });
+        if (!VersionComparator.isNewer(latestVersion, currentVersion)) {
+            throw new IllegalArgumentException("latestVersion must be newer than currentVersion");
+        }
     }
 
     private static String requireText(String value, String field) {
