@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [string]$Version,
@@ -239,6 +239,7 @@ try {
         '--input', $inputPath,
         '--main-jar', (Split-Path -Leaf $shadedJar),
         '--main-class', $mainClass,
+        '--icon', (Join-Path $PSScriptRoot '..\src\main\resources\BREDlogo.ico'),
         '--dest', $imageDestination
     )
     & $jpackagePath @appImageArguments
@@ -305,3 +306,4 @@ finally {
 
 Write-Output "Created $installerPath"
 Write-Warning 'The MSI has not been installed or tested as an upgrade. Verify its metadata and test against BRED 1.0.5 in an isolated environment.'
+
